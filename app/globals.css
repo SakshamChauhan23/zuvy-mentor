@@ -1,26 +1,253 @@
 @import "tailwindcss";
 
+/* ─────────────────────────────────────────
+   ZUVY DESIGN SYSTEM — CSS Custom Properties
+   ───────────────────────────────────────── */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Primary — Forest Green */
+  --primary:            #2C5F2D;
+  --primary-foreground: #FFFFFF;
+  --primary-light:      #E8F5E9;
+  --primary-dark:       #1D4620;
+
+  /* Secondary — Sunset Orange */
+  --secondary:            #EB7E2E;
+  --secondary-foreground: #FFFFFF;
+  --secondary-light:      #FDEEE3;
+  --secondary-dark:       #C66418;
+
+  /* Accent — Bright Teal */
+  --accent:            #12EA7B;
+  --accent-foreground: #1A1A1A;
+  --accent-light:      #E0FFF0;
+  --accent-dark:       #0DB862;
+
+  /* Success */
+  --success:            #7CB342;
+  --success-foreground: #FFFFFF;
+  --success-light:      #F2F9EC;
+  --success-dark:       #5A8E2B;
+
+  /* Destructive */
+  --destructive:            #D32F2F;
+  --destructive-foreground: #FFFFFF;
+  --destructive-light:      #FFF5F5;
+  --destructive-dark:       #B31F1F;
+
+  /* Warning */
+  --warning:            #F59E0B;
+  --warning-foreground: #1A1A1A;
+  --warning-light:      #FEF3C7;
+  --warning-dark:       #E08A0B;
+
+  /* Info */
+  --info:            #1976D2;
+  --info-foreground: #FFFFFF;
+  --info-light:      #E3F2FD;
+  --info-dark:       #0D47A1;
+
+  /* Neutrals */
+  --grey-light: #E3E1DD;
+  --grey:       #7B857F;
+  --grey-dark:  #404945;
+
+  /* Backgrounds & Surfaces */
+  --background:           #FAF9F7;
+  --background-secondary: #FFFFFF;
+  --card:                 #FFFFFF;
+  --muted:                #F0EEEB;
+
+  /* Text */
+  --text-primary:     #21302B;
+  --text-secondary:   #505952;
+  --text-tertiary:    #7B857F;
+  --text-muted:       #A3ABA7;
+  --text-accent:      #2C5F2D;
+  --text-interactive: #08B35D;
+
+  /* Border */
+  --border: #E3E1DD;
+  --border-focus: #2C5F2D;
+
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.08), 0 2px 4px rgba(0,0,0,0.04);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,0.10), 0 4px 8px rgba(0,0,0,0.04);
 }
+
+.dark {
+  /* Primary */
+  --primary:       #3A8A3E;
+  --primary-light: #2C5F2D;
+  --primary-dark:  #4FA053;
+
+  /* Secondary */
+  --secondary-light: #C66418;
+  --secondary-dark:  #F59F64;
+
+  /* Accent */
+  --accent-light: #0DB862;
+  --accent-dark:  #2BF291;
+
+  /* Success */
+  --success:            #82BB47;
+  --success-foreground: #1A1A1A;
+  --success-light:      #7CB342;
+  --success-dark:       #95C966;
+
+  /* Destructive */
+  --destructive:       #E75555;
+  --destructive-light: #D32F2F;
+  --destructive-dark:  #FF5757;
+
+  /* Warning */
+  --warning-light: #E08A0B;
+  --warning-dark:  #F7B955;
+
+  /* Info */
+  --info:       #5DAFEB;
+  --info-light: #1976D2;
+  --info-dark:  #90CAF9;
+
+  /* Neutrals */
+  --grey-light: #404040;
+  --grey:       #737373;
+  --grey-dark:  #E3E1DD;
+
+  /* Backgrounds */
+  --background:           #1A1A1A;
+  --background-secondary: #1F1F1F;
+  --card:                 #262626;
+  --muted:                #404040;
+
+  /* Text */
+  --text-primary:     #FAF9F7;
+  --text-secondary:   #D6CFC7;
+  --text-tertiary:    #BAAF9F;
+  --text-muted:       #999999;
+  --text-accent:      #3A8A3E;
+  --text-interactive: #12EA7B;
+
+  /* Border */
+  --border: #404040;
+  --border-focus: #3A8A3E;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.2);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.3);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,0.4);
+}
+
+/* ─────────────────────────────────────────
+   TAILWIND v4 — Theme Tokens
+   ───────────────────────────────────────── */
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  /* Fonts */
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  /* Map Zuvy tokens into Tailwind utilities */
+  --color-primary:            var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-light:      var(--primary-light);
+  --color-primary-dark:       var(--primary-dark);
+
+  --color-secondary:            var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary-light:      var(--secondary-light);
+  --color-secondary-dark:       var(--secondary-dark);
+
+  --color-accent:            var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent-light:      var(--accent-light);
+  --color-accent-dark:       var(--accent-dark);
+
+  --color-success:            var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-light:      var(--success-light);
+  --color-success-dark:       var(--success-dark);
+
+  --color-destructive:            var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-light:      var(--destructive-light);
+  --color-destructive-dark:       var(--destructive-dark);
+
+  --color-warning:            var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-light:      var(--warning-light);
+  --color-warning-dark:       var(--warning-dark);
+
+  --color-info:            var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-info-light:      var(--info-light);
+  --color-info-dark:       var(--info-dark);
+
+  --color-grey-light: var(--grey-light);
+  --color-grey:       var(--grey);
+  --color-grey-dark:  var(--grey-dark);
+
+  --color-background:           var(--background);
+  --color-background-secondary: var(--background-secondary);
+  --color-card:                 var(--card);
+  --color-muted:                var(--muted);
+  --color-border:               var(--border);
+
+  --color-text-primary:     var(--text-primary);
+  --color-text-secondary:   var(--text-secondary);
+  --color-text-tertiary:    var(--text-tertiary);
+  --color-text-muted:       var(--text-muted);
+  --color-text-accent:      var(--text-accent);
+  --color-text-interactive: var(--text-interactive);
+
+  /* Radius */
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* ─────────────────────────────────────────
+   BASE STYLES
+   ───────────────────────────────────────── */
+
+* {
+  box-sizing: border-box;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: var(--background);
+  color: var(--text-primary);
+  font-family: var(--font-sans), system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--grey-light);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--grey);
+}
+
+/* Focus ring */
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
