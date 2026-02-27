@@ -2,6 +2,7 @@ import type {
   MentorSession,
   MentorNotification,
   MentorRescheduleRequest,
+  SessionFeedback,
 } from "@/lib/types/mentor-session";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -93,6 +94,12 @@ const SEED_SESSIONS: MentorSession[] = [
     durationMinutes: 60,
     status: "completed",
     bookedAt: daysAgo(14),
+    feedback: {
+      rating: 5,
+      notes: "Lila came very well prepared with specific questions about transitioning from analytics to machine learning. She demonstrated strong SQL fundamentals and clear data intuition. The session flowed naturally and we covered both technical topics and career pathing.",
+      improvements: "Would benefit from spending more time on Python fundamentals — especially pandas and numpy — before moving into ML libraries. Recommend working through a structured course before the next session.",
+      submittedAt: daysAgo(2),
+    },
   },
   {
     id: "ms-6",
@@ -129,6 +136,32 @@ const SEED_SESSIONS: MentorSession[] = [
     durationMinutes: 60,
     status: "completed",
     bookedAt: daysAgo(28),
+  },
+
+  // ── Today / Yesterday — eligible for attendance ───────────────────────────
+  {
+    id: "ms-10",
+    learnerId: "l-7",
+    learnerName: "Diana Park",
+    learnerRole: "Product Designer at Airbnb",
+    date: daysFromToday(0),
+    startTime: "10:00",
+    endTime: "11:00",
+    durationMinutes: 60,
+    status: "upcoming",
+    bookedAt: daysAgo(3),
+  },
+  {
+    id: "ms-11",
+    learnerId: "l-8",
+    learnerName: "Kevin Torres",
+    learnerRole: "Backend Engineer at Stripe",
+    date: daysFromToday(-1),
+    startTime: "14:00",
+    endTime: "15:00",
+    durationMinutes: 60,
+    status: "upcoming",
+    bookedAt: daysAgo(6),
   },
 
   // ── Cancelled ────────────────────────────────────────────────────────────
@@ -236,6 +269,38 @@ export function declineRescheduleRequest(id: string): boolean {
 
   session.status = "upcoming";
   session.rescheduleRequest = undefined;
+  return true;
+}
+
+// ─── Attendance & completion actions ─────────────────────────────────────────
+
+export function recordAttendance(
+  id: string,
+  startedAt: string,
+  endedAt: string
+): boolean {
+  const session = _sessions.find((s) => s.id === id);
+  if (!session || session.status !== "upcoming") return false;
+  session.attendance = { startedAt, endedAt, recordedAt: new Date().toISOString() };
+  return true;
+}
+
+export function completeSession(id: string): boolean {
+  const session = _sessions.find((s) => s.id === id);
+  if (!session || session.status !== "upcoming" || !session.attendance) return false;
+  session.status = "completed";
+  return true;
+}
+
+// ─── Feedback actions ─────────────────────────────────────────────────────────
+
+export function submitFeedback(
+  id: string,
+  data: Omit<SessionFeedback, "submittedAt">
+): boolean {
+  const session = _sessions.find((s) => s.id === id);
+  if (!session || session.status !== "completed" || session.feedback) return false;
+  session.feedback = { ...data, submittedAt: new Date().toISOString() };
   return true;
 }
 

@@ -7,6 +7,9 @@ import {
   getMentorSessions,
   acceptRescheduleRequest,
   declineRescheduleRequest,
+  recordAttendance,
+  completeSession,
+  submitFeedback,
 } from "@/lib/mock/mentor-sessions";
 import type { MentorSession, MentorSessionStatus } from "@/lib/types/mentor-session";
 import {
@@ -22,6 +25,12 @@ import {
   RefreshCw,
   CalendarX,
   BookOpen,
+  ClipboardList,
+  CheckCheck,
+  Timer,
+  Star,
+  MessageSquare,
+  Lock,
 } from "lucide-react";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -74,6 +83,15 @@ function initials(name: string): string {
     .join("")
     .toUpperCase()
     .slice(0, 2);
+}
+
+function isEligibleForAttendance(session: MentorSession): boolean {
+  if (session.status !== "upcoming") return false;
+  const [y, m, d] = session.date.split("-").map(Number);
+  const sessionDate = new Date(y, m - 1, d);
+  const today = new Date();
+  const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  return sessionDate <= todayDate;
 }
 
 // ─── Status config ────────────────────────────────────────────────────────────
@@ -366,6 +384,9 @@ function RescheduleActions({
 
 // ─── Detail panel ─────────────────────────────────────────────────────────────
 
+type AttState = "idle" | "review" | "submitting" | "done" | "error";
+type CompleteState = "idle" | "confirming" | "completing" | "done" | "error";
+
 function DetailPanel({
   session,
   onClose,
@@ -378,6 +399,66 @@ function DetailPanel({
   const s = STATUS[session.status];
   const isPending = session.status === "reschedule-pending";
   const req = session.rescheduleRequest;
+
+  // Attendance state
+  const [attState, setAttState] = useState<AttState>("idle");
+  const [attStart, setAttStart] = useState(session.startTime);
+  const [attEnd, setAttEnd] = useState(session.endTime);
+  const [attError, setAttError] = useState("");
+
+  // Completion state
+  const [completeState, setCompleteState] = useState<CompleteState>("idle");
+  const [completeError, setCompleteError] = useState("");
+
+  // Feedback state
+  type FbState = "form" | "confirm" | "submitting" | "done" | "error";
+  const [fbState, setFbState] = useState<FbState>(session.feedback ? "done" : "form");
+  const [fbRating, setFbRating] = useState(session.feedback?.rating ?? 0);
+  const [fbHover, setFbHover] = useState(0);
+  const [fbNotes, setFbNotes] = useState(session.feedback?.notes ?? "");
+  const [fbImprovements, setFbImprovements] = useState(session.feedback?.improvements ?? "");
+
+  // Derived eligibility
+  const canRecordAttendance = isEligibleForAttendance(session) && !session.attendance;
+  const attendanceRecorded = !!session.attendance;
+  const canComplete = session.status === "upcoming" && attendanceRecorded;
+
+  function handleAttendanceReview() {
+    const startMins = attStart.split(":").map(Number).reduce((h, m) => h * 60 + m);
+    const endMins = attEnd.split(":").map(Number).reduce((h, m) => h * 60 + m);
+    if (endMins <= startMins) {
+      setAttError("End time must be after start time.");
+      return;
+    }
+    setAttError("");
+    setAttState("review");
+  }
+
+  function handleAttendanceConfirm() {
+    setAttState("submitting");
+    setTimeout(() => {
+      const ok = recordAttendance(session.id, attStart, attEnd);
+      if (ok) {
+        setAttState("done");
+        onSessionUpdated();
+      } else {
+        setAttState("error");
+      }
+    }, 800);
+  }
+
+  function handleCompleteConfirm() {
+    setCompleteState("completing");
+    setTimeout(() => {
+      const ok = completeSession(session.id);
+      if (ok) {
+        setCompleteState("done");
+        onSessionUpdated();
+      } else {
+        setCompleteState("error");
+      }
+    }, 800);
+  }
 
   return (
     <div className="flex flex-col h-full">
@@ -517,12 +598,405 @@ function DetailPanel({
           </div>
         )}
 
-        {/* Completed / Cancelled notes */}
+        {/* ── Attendance recording ──────────────────────────────────────── */}
+        {canRecordAttendance && attState !== "done" && (
+          <div className="rounded-xl border border-border bg-muted/40 p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <ClipboardList className="h-4 w-4 text-primary shrink-0" />
+              <p className="text-sm font-semibold text-text-primary">Record Attendance</p>
+            </div>
+
+            {attState === "idle" && (
+              <>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs text-text-muted">Actual start time</label>
+                    <input
+                      type="time"
+                      value={attStart}
+                      onChange={(e) => { setAttStart(e.target.value); setAttError(""); }}
+                      className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs text-text-muted">Actual end time</label>
+                    <input
+                      type="time"
+                      value={attEnd}
+                      onChange={(e) => { setAttEnd(e.target.value); setAttError(""); }}
+                      className="rounded-lg border border-border bg-card px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-primary"
+                    />
+                  </div>
+                </div>
+                {attError && (
+                  <p className="text-xs text-destructive">{attError}</p>
+                )}
+                <button
+                  onClick={handleAttendanceReview}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors"
+                >
+                  <Timer className="h-4 w-4" />
+                  Review Attendance
+                </button>
+              </>
+            )}
+
+            {attState === "review" && (
+              <>
+                <div className="rounded-lg border border-primary/30 bg-card p-3 space-y-1">
+                  <p className="text-xs text-text-muted">Session will be recorded as:</p>
+                  <p className="text-sm font-semibold text-text-primary">
+                    {formatTime(attStart)} – {formatTime(attEnd)}
+                  </p>
+                  <p className="text-xs text-text-muted">
+                    Duration: ~{(() => {
+                      const s = attStart.split(":").map(Number).reduce((h, m) => h * 60 + m);
+                      const e = attEnd.split(":").map(Number).reduce((h, m) => h * 60 + m);
+                      return e - s;
+                    })()} min
+                  </p>
+                </div>
+                <p className="text-xs text-text-muted">
+                  Once recorded, attendance cannot be changed.
+                </p>
+                <div className="flex gap-2.5">
+                  <button
+                    onClick={() => setAttState("idle")}
+                    className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-border px-4 py-2.5 text-sm font-semibold text-text-secondary hover:bg-muted transition-colors"
+                  >
+                    ← Edit
+                  </button>
+                  <button
+                    onClick={handleAttendanceConfirm}
+                    className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors"
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                    Confirm
+                  </button>
+                </div>
+              </>
+            )}
+
+            {attState === "submitting" && (
+              <div className="flex items-center justify-center gap-2 py-3 text-sm text-text-secondary">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Recording attendance…
+              </div>
+            )}
+
+            {attState === "error" && (
+              <div className="space-y-2">
+                <p className="text-xs text-destructive">Something went wrong. Please try again.</p>
+                <button
+                  onClick={() => setAttState("idle")}
+                  className="text-xs text-primary underline"
+                >
+                  Try again
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Attendance recorded badge */}
+        {(attendanceRecorded || attState === "done") && session.attendance && (
+          <div className="flex items-center gap-2.5 rounded-xl border border-accent/40 bg-accent-light/40 px-4 py-3">
+            <CheckCheck className="h-4 w-4 text-accent-foreground shrink-0" />
+            <div>
+              <p className="text-xs font-semibold text-accent-foreground">Attendance Recorded</p>
+              <p className="text-xs text-text-secondary mt-0.5">
+                {formatTime(session.attendance.startedAt)} – {formatTime(session.attendance.endedAt)}
+              </p>
+            </div>
+          </div>
+        )}
+
+        {/* ── Session completion ────────────────────────────────────────── */}
+        {canComplete && completeState !== "done" && (
+          <div className="rounded-xl border border-border bg-muted/40 p-4 space-y-3">
+            <div className="flex items-center gap-2">
+              <CheckCheck className="h-4 w-4 text-primary shrink-0" />
+              <p className="text-sm font-semibold text-text-primary">Complete Session</p>
+            </div>
+
+            {completeState === "idle" && (
+              <>
+                <p className="text-xs text-text-muted">
+                  Mark this session as completed to finalize the mentorship interaction.
+                </p>
+                <button
+                  onClick={() => setCompleteState("confirming")}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors"
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                  Mark Session Complete
+                </button>
+              </>
+            )}
+
+            {completeState === "confirming" && (
+              <>
+                <div className="rounded-lg border border-border bg-card p-3 space-y-1.5">
+                  <p className="text-xs text-text-muted font-medium">Completing session with:</p>
+                  <p className="text-sm font-semibold text-text-primary">{session.learnerName}</p>
+                  <p className="text-xs text-text-secondary">
+                    {formatDate(session.date)} · {formatTime(session.startTime)} – {formatTime(session.endTime)}
+                  </p>
+                </div>
+                <div className="rounded-lg border border-warning/30 bg-warning-light/40 px-3 py-2">
+                  <p className="text-xs text-warning-dark font-medium">
+                    This action is final. The session cannot be re-opened after completion.
+                  </p>
+                </div>
+                <div className="flex gap-2.5">
+                  <button
+                    onClick={() => setCompleteState("idle")}
+                    className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-border px-4 py-2.5 text-sm font-semibold text-text-secondary hover:bg-muted transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleCompleteConfirm}
+                    className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors"
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                    Yes, Complete
+                  </button>
+                </div>
+              </>
+            )}
+
+            {completeState === "completing" && (
+              <div className="flex items-center justify-center gap-2 py-3 text-sm text-text-secondary">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Completing session…
+              </div>
+            )}
+
+            {completeError && completeState === "error" && (
+              <div className="space-y-2">
+                <p className="text-xs text-destructive">Something went wrong. Please try again.</p>
+                <button
+                  onClick={() => setCompleteState("idle")}
+                  className="text-xs text-primary underline"
+                >
+                  Try again
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Feedback section (completed sessions only) ───────────── */}
         {session.status === "completed" && (
-          <div className="rounded-xl border border-border bg-accent-light/30 p-4 text-center">
-            <CheckCircle2 className="h-6 w-6 text-accent-foreground mx-auto mb-1.5" />
-            <p className="text-sm font-medium text-text-primary">Session Completed</p>
-            <p className="text-xs text-text-muted mt-0.5">This session has been successfully completed.</p>
+          <div className="rounded-xl border border-border bg-muted/40 p-4 space-y-4">
+
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <MessageSquare className="h-4 w-4 text-primary shrink-0" />
+                <p className="text-sm font-semibold text-text-primary">Session Feedback</p>
+              </div>
+              {fbState === "done" && session.feedback && (
+                <div className="flex items-center gap-1 text-xs text-text-muted">
+                  <Lock className="h-3 w-3" />
+                  <span>Submitted</span>
+                </div>
+              )}
+            </div>
+
+            {/* ── Form ── */}
+            {fbState === "form" && (
+              <div className="space-y-4">
+                {/* Star rating */}
+                <div className="space-y-1.5">
+                  <p className="text-xs text-text-muted">Session rating <span className="text-destructive">*</span></p>
+                  <div className="flex gap-1">
+                    {[1, 2, 3, 4, 5].map((i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => setFbRating(i)}
+                        onMouseEnter={() => setFbHover(i)}
+                        onMouseLeave={() => setFbHover(0)}
+                        className="transition-transform hover:scale-110 focus:outline-none"
+                        aria-label={`Rate ${i} star${i > 1 ? "s" : ""}`}
+                      >
+                        <Star
+                          className={cn(
+                            "h-7 w-7 transition-colors",
+                            i <= (fbHover || fbRating)
+                              ? "text-warning"
+                              : "text-text-muted"
+                          )}
+                          style={i <= (fbHover || fbRating) ? { fill: "currentColor" } : undefined}
+                        />
+                      </button>
+                    ))}
+                  </div>
+                  {fbRating > 0 && (
+                    <p className="text-xs text-text-muted">
+                      {["", "Poor", "Fair", "Good", "Great", "Excellent"][fbRating]}
+                    </p>
+                  )}
+                </div>
+
+                {/* Notes */}
+                <div className="space-y-1.5">
+                  <label className="text-xs text-text-muted">Feedback notes</label>
+                  <textarea
+                    value={fbNotes}
+                    onChange={(e) => setFbNotes(e.target.value)}
+                    rows={3}
+                    placeholder="Share what went well, key takeaways, or overall impressions of the session…"
+                    className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-text-primary placeholder:text-text-muted resize-none focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+
+                {/* Improvements */}
+                <div className="space-y-1.5">
+                  <label className="text-xs text-text-muted">Areas for improvement <span className="text-text-muted">(optional)</span></label>
+                  <textarea
+                    value={fbImprovements}
+                    onChange={(e) => setFbImprovements(e.target.value)}
+                    rows={2}
+                    placeholder="Suggest specific skills, topics, or practices the learner should focus on next…"
+                    className="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-text-primary placeholder:text-text-muted resize-none focus:outline-none focus:ring-2 focus:ring-primary"
+                  />
+                </div>
+
+                <button
+                  onClick={() => { if (fbRating > 0) setFbState("confirm"); }}
+                  disabled={fbRating === 0}
+                  className={cn(
+                    "flex w-full items-center justify-center gap-2 rounded-lg px-4 py-2.5",
+                    "text-sm font-semibold transition-colors",
+                    "bg-primary text-primary-foreground hover:bg-primary/90",
+                    "disabled:opacity-50 disabled:cursor-not-allowed"
+                  )}
+                >
+                  <Star className="h-4 w-4" />
+                  Review & Submit Feedback
+                </button>
+                {fbRating === 0 && (
+                  <p className="text-xs text-text-muted text-center">A rating is required before submitting</p>
+                )}
+              </div>
+            )}
+
+            {/* ── Confirm ── */}
+            {fbState === "confirm" && (
+              <div className="space-y-3">
+                <div className="rounded-lg border border-border bg-card p-3 space-y-3">
+                  <div className="flex items-center gap-1">
+                    {[1, 2, 3, 4, 5].map((i) => (
+                      <Star
+                        key={i}
+                        className={cn("h-5 w-5", i <= fbRating ? "text-warning" : "text-text-muted")}
+                        style={i <= fbRating ? { fill: "currentColor" } : undefined}
+                      />
+                    ))}
+                    <span className="ml-2 text-sm font-semibold text-text-primary">
+                      {["", "Poor", "Fair", "Good", "Great", "Excellent"][fbRating]}
+                    </span>
+                  </div>
+                  {fbNotes && (
+                    <div>
+                      <p className="text-xs text-text-muted mb-0.5">Feedback notes</p>
+                      <p className="text-sm text-text-secondary leading-relaxed line-clamp-3">{fbNotes}</p>
+                    </div>
+                  )}
+                  {fbImprovements && (
+                    <div>
+                      <p className="text-xs text-text-muted mb-0.5">Areas for improvement</p>
+                      <p className="text-sm text-text-secondary leading-relaxed line-clamp-2">{fbImprovements}</p>
+                    </div>
+                  )}
+                </div>
+                <div className="rounded-lg border border-warning/30 bg-warning-light/40 px-3 py-2">
+                  <p className="text-xs text-warning-dark font-medium">
+                    Feedback cannot be edited after submission.
+                  </p>
+                </div>
+                <div className="flex gap-2.5">
+                  <button
+                    onClick={() => setFbState("form")}
+                    className="flex flex-1 items-center justify-center gap-2 rounded-lg border border-border px-4 py-2.5 text-sm font-semibold text-text-secondary hover:bg-muted transition-colors"
+                  >
+                    ← Edit
+                  </button>
+                  <button
+                    onClick={() => {
+                      setFbState("submitting");
+                      setTimeout(() => {
+                        const ok = submitFeedback(session.id, {
+                          rating: fbRating,
+                          notes: fbNotes,
+                          improvements: fbImprovements,
+                        });
+                        if (ok) { setFbState("done"); onSessionUpdated(); }
+                        else setFbState("error");
+                      }, 800);
+                    }}
+                    className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors"
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                    Submit
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ── Submitting ── */}
+            {fbState === "submitting" && (
+              <div className="flex items-center justify-center gap-2 py-4 text-sm text-text-secondary">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Submitting feedback…
+              </div>
+            )}
+
+            {/* ── Error ── */}
+            {fbState === "error" && (
+              <div className="space-y-2">
+                <p className="text-xs text-destructive">Something went wrong. Your feedback was not saved.</p>
+                <button onClick={() => setFbState("form")} className="text-xs text-primary underline">
+                  Try again
+                </button>
+              </div>
+            )}
+
+            {/* ── Done (read-only view) ── */}
+            {fbState === "done" && session.feedback && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-1">
+                  {[1, 2, 3, 4, 5].map((i) => (
+                    <Star
+                      key={i}
+                      className={cn("h-5 w-5", i <= session.feedback!.rating ? "text-warning" : "text-text-muted")}
+                      style={i <= session.feedback!.rating ? { fill: "currentColor" } : undefined}
+                    />
+                  ))}
+                  <span className="ml-2 text-sm font-semibold text-text-primary">
+                    {["", "Poor", "Fair", "Good", "Great", "Excellent"][session.feedback.rating]}
+                  </span>
+                </div>
+                {session.feedback.notes && (
+                  <div>
+                    <p className="text-xs text-text-muted mb-1">Feedback notes</p>
+                    <p className="text-sm text-text-secondary leading-relaxed">{session.feedback.notes}</p>
+                  </div>
+                )}
+                {session.feedback.improvements && (
+                  <div>
+                    <p className="text-xs text-text-muted mb-1">Areas for improvement</p>
+                    <p className="text-sm text-text-secondary leading-relaxed">{session.feedback.improvements}</p>
+                  </div>
+                )}
+                <p className="text-xs text-text-muted">
+                  Submitted {formatRelative(session.feedback.submittedAt)}
+                </p>
+              </div>
+            )}
           </div>
         )}
 

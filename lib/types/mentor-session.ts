@@ -4,6 +4,19 @@ export type MentorSessionStatus =
   | "cancelled"
   | "reschedule-pending";
 
+export interface AttendanceRecord {
+  startedAt: string;  // "HH:MM" 24-hour actual start
+  endedAt: string;    // "HH:MM" 24-hour actual end
+  recordedAt: string; // ISO timestamp
+}
+
+export interface SessionFeedback {
+  rating: number;       // 1–5
+  notes: string;        // general feedback
+  improvements: string; // improvement suggestions (may be empty)
+  submittedAt: string;  // ISO timestamp
+}
+
 export interface MentorRescheduleRequest {
   proposedDate: string;          // "YYYY-MM-DD"
   proposedStartTime: string;     // "HH:MM" 24-hour
@@ -25,6 +38,8 @@ export interface MentorSession {
   status: MentorSessionStatus;
   bookedAt: string;              // ISO timestamp
   rescheduleRequest?: MentorRescheduleRequest;
+  attendance?: AttendanceRecord;
+  feedback?: SessionFeedback;
 }
 
 export type NotificationType =
