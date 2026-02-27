@@ -19,7 +19,6 @@ import {
   BookOpen,
   BarChart2,
   Zap,
-  CircleDot,
 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import {
@@ -364,6 +363,9 @@ export default function MentorDashboard() {
 
   const completed = sessions.filter((s) => s.status === "completed");
   const uniqueLearners = new Set(sessions.map((s) => s.learnerId)).size;
+  const endedSessions = sessions.filter((s) => s.status === "completed" || s.status === "cancelled").length;
+  const completionRate = endedSessions > 0 ? Math.round((completed.length / endedSessions) * 100) : 0;
+  const hoursDelivered = Math.round(completed.reduce((a, s) => a + s.durationMinutes, 0) / 60);
   const rescheduleRequests = sessions.filter(
     (s) => s.status === "reschedule-pending" && s.rescheduleRequest
   );
@@ -544,6 +546,65 @@ export default function MentorDashboard() {
                   </div>
                 )}
               </div>
+
+              {/* Performance snapshot */}
+              <div className="rounded-xl border border-border bg-card p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h2 className="text-sm font-bold text-text-primary">Performance Snapshot</h2>
+                    <p className="text-xs text-text-muted mt-0.5">Your mentoring at a glance</p>
+                  </div>
+                  <Link href="/mentor/performance" className="flex items-center gap-1 text-xs font-semibold text-primary hover:text-primary-dark transition-colors">
+                    Full report <ArrowRight className="h-3.5 w-3.5" />
+                  </Link>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  {/* Completion rate */}
+                  <div className="rounded-lg bg-muted/50 p-3 space-y-2">
+                    <div className="flex items-center gap-1.5">
+                      <TrendingUp className="h-3.5 w-3.5 text-success" />
+                      <p className="text-xs font-medium text-text-secondary">Completion Rate</p>
+                    </div>
+                    <p className="text-2xl font-bold text-text-primary tabular-nums">{completionRate}%</p>
+                    <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                      <div className="h-full rounded-full bg-success" style={{ width: `${completionRate}%` }} />
+                    </div>
+                    <p className="text-[10px] text-text-muted">{completed.length} of {endedSessions} concluded</p>
+                  </div>
+                  {/* Rating */}
+                  <div className="rounded-lg bg-muted/50 p-3 space-y-2">
+                    <div className="flex items-center gap-1.5">
+                      <Star className="h-3.5 w-3.5 text-accent" />
+                      <p className="text-xs font-medium text-text-secondary">Avg Rating</p>
+                    </div>
+                    <p className="text-2xl font-bold text-text-primary tabular-nums">4.9</p>
+                    <div className="flex gap-0.5">
+                      {[1, 2, 3, 4, 5].map((i) => (
+                        <Star key={i} className="h-3 w-3 text-accent" style={{ fill: "currentColor" }} />
+                      ))}
+                    </div>
+                    <p className="text-[10px] text-text-muted">Based on 8 reviews</p>
+                  </div>
+                  {/* Hours */}
+                  <div className="rounded-lg bg-muted/50 p-3">
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <Clock className="h-3.5 w-3.5 text-info" />
+                      <p className="text-xs font-medium text-text-secondary">Hours Delivered</p>
+                    </div>
+                    <p className="text-2xl font-bold text-text-primary tabular-nums">{hoursDelivered}h</p>
+                    <p className="text-[10px] text-text-muted mt-1">Across {completed.length} sessions</p>
+                  </div>
+                  {/* Learners */}
+                  <div className="rounded-lg bg-muted/50 p-3">
+                    <div className="flex items-center gap-1.5 mb-2">
+                      <Users className="h-3.5 w-3.5 text-secondary" />
+                      <p className="text-xs font-medium text-text-secondary">Learners Helped</p>
+                    </div>
+                    <p className="text-2xl font-bold text-text-primary tabular-nums">{uniqueLearners}</p>
+                    <p className="text-[10px] text-text-muted mt-1">Unique learners</p>
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* Right (1/3) */}
@@ -622,47 +683,6 @@ export default function MentorDashboard() {
                 ))}
               </div>
             </div>
-          </div>
-
-          {/* ── Performance strip ─────────────────────────────────── */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {[
-              {
-                icon: TrendingUp,
-                bg: "bg-success-light",
-                color: "text-success",
-                label: "Completion Rate",
-                value: `${completed.length > 0 ? Math.round((completed.length / sessions.filter(s => s.status !== "upcoming" && s.status !== "reschedule-pending").length) * 100) : 0}%`,
-                sub: `${completed.length} of ${sessions.filter(s => s.status !== "upcoming" && s.status !== "reschedule-pending").length} sessions completed`,
-              },
-              {
-                icon: Clock,
-                bg: "bg-accent/10",
-                color: "text-accent",
-                label: "Hours Delivered",
-                value: `${Math.round(completed.reduce((a, s) => a + s.durationMinutes, 0) / 60)}h`,
-                sub: `Across ${completed.length} completed sessions`,
-              },
-              {
-                icon: CircleDot,
-                bg: "bg-secondary/10",
-                color: "text-secondary",
-                label: "Reschedule Requests",
-                value: sessions.filter((s) => s.status === "reschedule-pending").length,
-                sub: "Awaiting your response",
-              },
-            ].map((item) => (
-              <div key={item.label} className="rounded-xl border border-border bg-card p-4 flex items-center gap-4">
-                <div className={cn("flex h-12 w-12 shrink-0 items-center justify-center rounded-xl", item.bg)}>
-                  <item.icon className={cn("h-6 w-6", item.color)} />
-                </div>
-                <div>
-                  <p className="text-xl font-bold text-text-primary tabular-nums">{item.value}</p>
-                  <p className="text-xs font-semibold text-text-primary mt-0.5">{item.label}</p>
-                  <p className="text-xs text-text-muted">{item.sub}</p>
-                </div>
-              </div>
-            ))}
           </div>
 
         </div>
