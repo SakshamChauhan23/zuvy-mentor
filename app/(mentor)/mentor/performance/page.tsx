@@ -2,15 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import {
-  TrendingUp,
-  Star,
-  Clock,
-  Users,
-  CalendarDays,
-  BarChart2,
-  Zap,
-} from "lucide-react";
+import { Star } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { getMentorSessions } from "@/lib/mock/mentor-sessions";
 import { cn } from "@/lib/utils";
@@ -121,9 +113,6 @@ function PerformanceSkeleton() {
 function EmptyMetrics() {
   return (
     <div className="rounded-xl border border-border bg-card p-12 flex flex-col items-center gap-4 text-center max-w-md mx-auto">
-      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10">
-        <BarChart2 className="h-8 w-8 text-primary" />
-      </div>
       <div>
         <p className="text-base font-bold text-text-primary">No performance data yet</p>
         <p className="text-sm text-text-muted mt-1 leading-relaxed">
@@ -134,7 +123,6 @@ function EmptyMetrics() {
         href="/mentor/availability"
         className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary-dark transition-colors"
       >
-        <CalendarDays className="h-4 w-4" />
         Set availability
       </Link>
     </div>
@@ -201,44 +189,24 @@ export default function PerformanceMetricsPage() {
                 label: "Completion Rate",
                 value: `${completionRate}%`,
                 sub: `${completed.length} of ${ended} sessions completed`,
-                icon: TrendingUp,
-                bg: "bg-success-light",
-                color: "text-success",
               },
               {
                 label: "Average Rating",
                 value: avgRating.toFixed(1),
                 sub: `Based on ${totalReviews} reviews`,
-                icon: Star,
-                bg: "bg-accent/10",
-                color: "text-accent",
               },
               {
                 label: "Hours Delivered",
                 value: `${hoursDelivered}h`,
                 sub: avgMinutes > 0 ? `${avgMinutes} min avg per session` : "No sessions yet",
-                icon: Clock,
-                bg: "bg-info-light",
-                color: "text-info",
               },
               {
                 label: "Learners Helped",
                 value: uniqueLearners,
                 sub: `${upcoming.length} more session${upcoming.length !== 1 ? "s" : ""} upcoming`,
-                icon: Users,
-                bg: "bg-secondary/10",
-                color: "text-secondary",
               },
             ].map((m) => (
               <div key={m.label} className="rounded-xl border border-border bg-card p-5">
-                <div
-                  className={cn(
-                    "flex h-10 w-10 items-center justify-center rounded-xl mb-4",
-                    m.bg
-                  )}
-                >
-                  <m.icon className={cn("h-5 w-5", m.color)} />
-                </div>
                 <p className="text-2xl font-bold text-text-primary tabular-nums">{m.value}</p>
                 <p className="text-xs font-semibold text-text-primary mt-0.5">{m.label}</p>
                 <p className="text-xs text-text-muted mt-1">{m.sub}</p>
@@ -374,9 +342,6 @@ export default function PerformanceMetricsPage() {
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {[
               {
-                icon: CalendarDays,
-                bg: "bg-primary/10",
-                color: "text-primary",
                 label: "Upcoming Sessions",
                 value: upcoming.length,
                 sub:
@@ -385,17 +350,11 @@ export default function PerformanceMetricsPage() {
                     : `Session${upcoming.length !== 1 ? "s" : ""} booked ahead`,
               },
               {
-                icon: Clock,
-                bg: "bg-accent/10",
-                color: "text-accent",
                 label: "Avg Session Length",
                 value: avgMinutes > 0 ? `${avgMinutes}m` : "—",
                 sub: `Across ${completed.length} completed session${completed.length !== 1 ? "s" : ""}`,
               },
               {
-                icon: Zap,
-                bg: "bg-secondary/10",
-                color: "text-secondary",
                 label: "Total Sessions",
                 value: sessions.length,
                 sub: `${ended} concluded · ${upcoming.length} upcoming`,
@@ -403,21 +362,11 @@ export default function PerformanceMetricsPage() {
             ].map((item) => (
               <div
                 key={item.label}
-                className="rounded-xl border border-border bg-card p-4 flex items-center gap-4"
+                className="rounded-xl border border-border bg-card p-5"
               >
-                <div
-                  className={cn(
-                    "flex h-12 w-12 shrink-0 items-center justify-center rounded-xl",
-                    item.bg
-                  )}
-                >
-                  <item.icon className={cn("h-6 w-6", item.color)} />
-                </div>
-                <div>
-                  <p className="text-xl font-bold text-text-primary tabular-nums">{item.value}</p>
-                  <p className="text-xs font-semibold text-text-primary mt-0.5">{item.label}</p>
-                  <p className="text-xs text-text-muted">{item.sub}</p>
-                </div>
+                <p className="text-xl font-bold text-text-primary tabular-nums">{item.value}</p>
+                <p className="text-xs font-semibold text-text-primary mt-0.5">{item.label}</p>
+                <p className="text-xs text-text-muted mt-1">{item.sub}</p>
               </div>
             ))}
           </div>
