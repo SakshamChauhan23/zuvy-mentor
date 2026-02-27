@@ -6,6 +6,7 @@ import {
   LayoutDashboard,
   Users,
   CalendarDays,
+  CalendarRange,
   BookOpen,
   BarChart2,
   Settings,
@@ -28,6 +29,7 @@ const learnerNav = [
 const mentorNav = [
   { label: "Dashboard",     href: "/mentor/dashboard",    icon: LayoutDashboard },
   { label: "Availability",  href: "/mentor/availability", icon: CalendarDays },
+  { label: "Calendar",      href: "/mentor/calendar",     icon: CalendarRange },
   { label: "Sessions",      href: "/mentor/sessions",     icon: BookOpen },
   { label: "Performance",   href: "/mentor/performance",  icon: BarChart2 },
 ];
