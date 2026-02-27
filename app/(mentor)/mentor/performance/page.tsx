@@ -155,8 +155,6 @@ export default function PerformanceMetricsPage() {
   const hoursDelivered = completed.length > 0 ? (totalMinutes / 60).toFixed(1) : "0";
   const avgMinutes =
     completed.length > 0 ? Math.round(totalMinutes / completed.length) : 0;
-  const uniqueLearners = new Set(sessions.map((s) => s.learnerId)).size;
-
   // Rating — aggregated from submitted feedback (mocked constants for now)
   const avgRating: number = 4.9;
   const totalReviews: number = 8;
@@ -183,7 +181,7 @@ export default function PerformanceMetricsPage() {
         <div className="space-y-6 max-w-5xl">
 
           {/* ── Key metric cards ─────────────────────────────────────── */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-3 gap-4">
             {[
               {
                 label: "Completion Rate",
@@ -199,11 +197,6 @@ export default function PerformanceMetricsPage() {
                 label: "Hours Delivered",
                 value: `${hoursDelivered}h`,
                 sub: avgMinutes > 0 ? `${avgMinutes} min avg per session` : "No sessions yet",
-              },
-              {
-                label: "Learners Helped",
-                value: uniqueLearners,
-                sub: `${upcoming.length} more session${upcoming.length !== 1 ? "s" : ""} upcoming`,
               },
             ].map((m) => (
               <div key={m.label} className="rounded-xl border border-border bg-card p-5">
