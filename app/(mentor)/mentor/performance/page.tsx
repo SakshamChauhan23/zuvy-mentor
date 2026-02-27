@@ -10,8 +10,6 @@ import {
   CalendarDays,
   BarChart2,
   Zap,
-  CheckCircle2,
-  XCircle,
 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { getMentorSessions } from "@/lib/mock/mentor-sessions";
@@ -31,6 +29,61 @@ function RatingStars({ value, size = "sm" }: { value: number; size?: "sm" | "lg"
           style={i <= Math.round(value) ? { fill: "currentColor" } : {}}
         />
       ))}
+    </div>
+  );
+}
+
+// ─── Weekly bar chart ──────────────────────────────────────────────────────────
+
+const WEEKLY_DATA = [
+  { label: "Jan 12", completed: 1, cancelled: 0 },
+  { label: "Jan 19", completed: 2, cancelled: 1 },
+  { label: "Jan 26", completed: 1, cancelled: 0 },
+  { label: "Feb 2",  completed: 3, cancelled: 1 },
+  { label: "Feb 9",  completed: 2, cancelled: 0 },
+  { label: "Feb 16", completed: 4, cancelled: 1 },
+];
+
+function WeeklyBarChart({
+  data,
+}: {
+  data: { label: string; completed: number; cancelled: number }[];
+}) {
+  const CHART_H = 96;
+  const max = Math.max(...data.map((d) => d.completed + d.cancelled), 1);
+  return (
+    <div>
+      <div className="flex items-end gap-1.5" style={{ height: CHART_H }}>
+        {data.map((d, i) => {
+          const total = d.completed + d.cancelled;
+          const totalPx = Math.round((total / max) * CHART_H);
+          const completedPx = total > 0 ? Math.round((d.completed / total) * totalPx) : 0;
+          const cancelledPx = totalPx - completedPx;
+          return (
+            <div key={i} className="flex-1 flex flex-col justify-end gap-px">
+              {cancelledPx > 0 && (
+                <div
+                  className="w-full rounded-sm shrink-0 bg-destructive/40"
+                  style={{ height: cancelledPx }}
+                />
+              )}
+              {completedPx > 0 && (
+                <div
+                  className="w-full rounded-sm shrink-0 bg-success"
+                  style={{ height: completedPx }}
+                />
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex gap-1.5 mt-2">
+        {data.map((d, i) => (
+          <div key={i} className="flex-1 text-center">
+            <p className="text-[8px] text-text-muted leading-tight">{d.label}</p>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -110,7 +163,6 @@ export default function PerformanceMetricsPage() {
   );
   const ended = completed.length + cancelled.length;
   const completionRate = ended > 0 ? Math.round((completed.length / ended) * 100) : 0;
-  const cancellationRate = ended > 0 ? Math.round((cancelled.length / ended) * 100) : 0;
   const totalMinutes = completed.reduce((a, s) => a + s.durationMinutes, 0);
   const hoursDelivered = completed.length > 0 ? (totalMinutes / 60).toFixed(1) : "0";
   const avgMinutes =
@@ -197,91 +249,54 @@ export default function PerformanceMetricsPage() {
           {/* ── Session outcomes + Rating ─────────────────────────────── */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
 
-            {/* Session outcomes */}
-            <div className="rounded-xl border border-border bg-card p-5 space-y-5">
+            {/* Session activity */}
+            <div className="rounded-xl border border-border bg-card p-5 space-y-4">
               <div>
-                <h2 className="text-sm font-bold text-text-primary">Session Outcomes</h2>
-                <p className="text-xs text-text-muted mt-0.5">
-                  Breakdown of {ended} concluded session{ended !== 1 ? "s" : ""}
-                </p>
+                <h2 className="text-sm font-bold text-text-primary">Session Activity</h2>
+                <p className="text-xs text-text-muted mt-0.5">Weekly sessions — last 6 weeks</p>
               </div>
 
-              {ended === 0 ? (
-                <p className="py-8 text-center text-sm text-text-muted">
-                  No concluded sessions yet.
-                </p>
-              ) : (
-                <div className="space-y-5">
-                  {/* Completion bar */}
-                  <div>
-                    <div className="flex items-center justify-between text-xs mb-1.5">
-                      <span className="flex items-center gap-1.5 font-medium text-text-secondary">
-                        <CheckCircle2 className="h-3.5 w-3.5 text-success" />
-                        Completed
-                      </span>
-                      <span className="font-bold text-success">{completionRate}%</span>
-                    </div>
-                    <div className="h-2 rounded-full bg-muted overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-success transition-all duration-700"
-                        style={{ width: `${completionRate}%` }}
-                      />
-                    </div>
-                    <p className="text-[10px] text-text-muted mt-1">
-                      {completed.length} session{completed.length !== 1 ? "s" : ""} delivered
-                    </p>
-                  </div>
+              <WeeklyBarChart data={WEEKLY_DATA} />
 
-                  {/* Cancellation bar */}
-                  <div>
-                    <div className="flex items-center justify-between text-xs mb-1.5">
-                      <span className="flex items-center gap-1.5 font-medium text-text-secondary">
-                        <XCircle className="h-3.5 w-3.5 text-destructive" />
-                        Cancelled
-                      </span>
-                      <span className="font-bold text-destructive">{cancellationRate}%</span>
-                    </div>
-                    <div className="h-2 rounded-full bg-muted overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-destructive/60 transition-all duration-700"
-                        style={{ width: `${cancellationRate}%` }}
-                      />
-                    </div>
-                    <p className="text-[10px] text-text-muted mt-1">
-                      {cancelled.length} session{cancelled.length !== 1 ? "s" : ""} cancelled
-                    </p>
-                  </div>
+              {/* Legend */}
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-1.5">
+                  <div className="h-2.5 w-2.5 rounded-sm bg-success" />
+                  <span className="text-[10px] text-text-muted">Completed</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="h-2.5 w-2.5 rounded-sm bg-destructive/40" />
+                  <span className="text-[10px] text-text-muted">Cancelled</span>
+                </div>
+              </div>
 
-                  {/* Count chips */}
-                  <div className="grid grid-cols-3 gap-2 pt-1">
+              {/* Non-duplicate stats */}
+              {(() => {
+                const bestWeek = WEEKLY_DATA.reduce((b, w) =>
+                  w.completed + w.cancelled > b.completed + b.cancelled ? w : b
+                );
+                const weeklyAvg = (
+                  WEEKLY_DATA.reduce((s, w) => s + w.completed + w.cancelled, 0) /
+                  WEEKLY_DATA.length
+                ).toFixed(1);
+                const hrs = Math.floor(totalMinutes / 60);
+                const mins = totalMinutes % 60;
+                const totalTime = hrs > 0 ? `${hrs}h ${mins}m` : `${mins}m`;
+                return (
+                  <div className="grid grid-cols-3 gap-2">
                     {[
-                      {
-                        label: "Completed",
-                        value: completed.length,
-                        bg: "bg-success-light",
-                        text: "text-success-dark",
-                      },
-                      {
-                        label: "Cancelled",
-                        value: cancelled.length,
-                        bg: "bg-destructive-light",
-                        text: "text-destructive",
-                      },
-                      {
-                        label: "Upcoming",
-                        value: upcoming.length,
-                        bg: "bg-info-light",
-                        text: "text-info",
-                      },
-                    ].map((c) => (
-                      <div key={c.label} className={cn("rounded-lg p-3 text-center", c.bg)}>
-                        <p className={cn("text-xl font-bold tabular-nums", c.text)}>{c.value}</p>
-                        <p className={cn("text-[10px] font-medium mt-0.5", c.text)}>{c.label}</p>
+                      { label: "Avg / week", value: weeklyAvg },
+                      { label: "Best week", value: `${bestWeek.completed + bestWeek.cancelled} sessions` },
+                      { label: "Total time", value: totalTime },
+                    ].map((s) => (
+                      <div key={s.label} className="rounded-lg bg-muted/50 p-3 text-center">
+                        <p className="text-sm font-bold text-text-primary tabular-nums">{s.value}</p>
+                        <p className="text-[10px] text-text-muted mt-0.5">{s.label}</p>
                       </div>
                     ))}
                   </div>
-                </div>
-              )}
+                );
+              })()}
             </div>
 
             {/* Rating & feedback */}
