@@ -77,8 +77,8 @@ export default function MentorCard({ mentor }: MentorCardProps) {
 
         {/* Name + verified + title */}
         <div className="min-w-0">
-          <div className="flex items-center gap-1.5">
-            <span className="text-sm font-semibold text-text-primary truncate">
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-sm font-semibold text-text-primary">
               {name}
             </span>
             {isVerified && (
@@ -88,7 +88,7 @@ export default function MentorCard({ mentor }: MentorCardProps) {
               />
             )}
           </div>
-          <p className="text-xs text-text-secondary truncate mt-0.5">{title}</p>
+          <p className="text-xs text-text-secondary mt-0.5">{title}</p>
         </div>
       </div>
 
