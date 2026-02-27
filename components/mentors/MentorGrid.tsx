@@ -108,7 +108,7 @@ export default function MentorGrid({ mentors, state, onRetry }: MentorGridProps)
 // ── Shared classes ──────────────────────────────────────────────────────────
 
 const gridClass =
-  "grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4";
+  "grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3";
 
 function StateShell({ children }: { children: React.ReactNode }) {
   return (
