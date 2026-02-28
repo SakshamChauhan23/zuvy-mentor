@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import MentorGrid from "@/components/mentors/MentorGrid";
-import { MOCK_MENTORS } from "@/lib/mock/mentors";
 import type { Mentor } from "@/lib/types/mentor";
 
 type PageState = "loading" | "error" | "empty" | "ready";
@@ -12,14 +11,17 @@ export default function MentorsPage() {
   const [state, setState] = useState<PageState>("loading");
   const [mentors, setMentors] = useState<Mentor[]>([]);
 
-  // Simulates an API fetch — swap this out when real API is available
-  const loadMentors = () => {
+  const loadMentors = async () => {
     setState("loading");
-    setTimeout(() => {
-      // Toggle to "error" or "empty" here to test those states manually
-      setMentors(MOCK_MENTORS);
-      setState("ready");
-    }, 900);
+    try {
+      const res = await fetch("/api/mentors");
+      if (!res.ok) throw new Error("Failed to fetch");
+      const data: Mentor[] = await res.json();
+      setMentors(data);
+      setState(data.length === 0 ? "empty" : "ready");
+    } catch {
+      setState("error");
+    }
   };
 
   useEffect(() => {
@@ -42,7 +44,6 @@ export default function MentorsPage() {
     >
       {/* ── Filter bar ─────────────────────────────────────── */}
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        {/* Availability filter chips */}
         <div className="flex flex-wrap gap-2">
           {[
             { label: "All mentors", value: "all" },
@@ -62,7 +63,6 @@ export default function MentorsPage() {
           ))}
         </div>
 
-        {/* Result count */}
         {state === "ready" && (
           <p className="text-xs text-text-muted shrink-0">
             {mentors.length} results

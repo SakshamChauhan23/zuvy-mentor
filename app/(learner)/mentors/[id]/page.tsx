@@ -5,7 +5,6 @@ import { use } from "react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import MentorProfile from "@/components/mentors/MentorProfile";
 import MentorProfileSkeleton from "@/components/mentors/MentorProfileSkeleton";
-import { getMentorById } from "@/lib/mock/mentors";
 import type { Mentor } from "@/lib/types/mentor";
 
 type PageState = "loading" | "ready" | "error" | "not-found";
@@ -20,18 +19,18 @@ export default function MentorProfilePage({
   const [state, setState] = useState<PageState>("loading");
   const [mentor, setMentor] = useState<Mentor | null>(null);
 
-  // Simulates an API fetch — swap for real API when available
-  const loadMentor = () => {
+  const loadMentor = async () => {
     setState("loading");
-    setTimeout(() => {
-      const found = getMentorById(id);
-      if (!found) {
-        setState("not-found");
-      } else {
-        setMentor(found);
-        setState("ready");
-      }
-    }, 700);
+    try {
+      const res = await fetch(`/api/mentors/${id}`);
+      if (res.status === 404) { setState("not-found"); return; }
+      if (!res.ok) throw new Error("Failed to fetch");
+      const data: Mentor = await res.json();
+      setMentor(data);
+      setState("ready");
+    } catch {
+      setState("error");
+    }
   };
 
   useEffect(() => {

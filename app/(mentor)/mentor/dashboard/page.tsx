@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   CalendarDays,
@@ -21,18 +22,111 @@ import {
   Zap,
 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
-import {
-  getMentorSessions,
-  getMentorNotifications,
-  acceptRescheduleRequest,
-  declineRescheduleRequest,
-  markNotificationRead,
-} from "@/lib/mock/mentor-sessions";
-import { formatTime, formatDuration } from "@/lib/mock/slots";
+import { formatTime } from "@/lib/mock/slots";
 import { cn } from "@/lib/utils";
 import type { MentorSession, MentorNotification } from "@/lib/types/mentor-session";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function toDateStr(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function toHHMM(iso: string): string {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+function mapNotifType(dbType: string): MentorNotification["type"] {
+  if (dbType.includes("BOOKING_CONFIRMED") || dbType.includes("SESSION_REMINDER")) return "booking";
+  if (dbType.includes("CANCEL")) return "cancellation";
+  if (dbType.includes("RESCHEDULE")) return "reschedule";
+  if (dbType.includes("FEEDBACK") || dbType.includes("RATING")) return "rating";
+  return "message";
+}
+
+interface ApiSession {
+  id: string;
+  studentId: string;
+  learnerName: string;
+  learnerEmail: string;
+  slotStart: string;
+  slotEnd: string;
+  durationMinutes: number;
+  status: MentorSession["status"];
+  bookedAt: string;
+  cancelReason: string | null;
+  rescheduleReason: string | null;
+  rescheduleNewSlotId: string | null;
+  rescheduleNewSlot: { slotStart: string; slotEnd: string; durationMinutes: number } | null;
+  joinedAt: string | null;
+  leftAt: string | null;
+  completedAt: string | null;
+  feedback: { notes?: string; areasOfImprovement?: string } | null;
+  rating: number | null;
+}
+
+interface ApiNotification {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  reference_id: string | null;
+  is_read: boolean;
+  created_at: string;
+}
+
+function toMentorSession(a: ApiSession): MentorSession {
+  return {
+    id: a.id,
+    learnerId: a.studentId,
+    learnerName: a.learnerName,
+    learnerRole: a.learnerEmail,
+    date: toDateStr(a.slotStart),
+    startTime: toHHMM(a.slotStart),
+    endTime: toHHMM(a.slotEnd),
+    durationMinutes: a.durationMinutes,
+    status: a.status,
+    bookedAt: a.bookedAt,
+    rescheduleRequest: a.rescheduleNewSlot
+      ? {
+          proposedDate: toDateStr(a.rescheduleNewSlot.slotStart),
+          proposedStartTime: toHHMM(a.rescheduleNewSlot.slotStart),
+          proposedEndTime: toHHMM(a.rescheduleNewSlot.slotEnd),
+          proposedDurationMinutes: a.rescheduleNewSlot.durationMinutes,
+          reason: a.rescheduleReason ?? "",
+          requestedAt: a.bookedAt,
+        }
+      : undefined,
+    attendance: a.joinedAt
+      ? {
+          startedAt: toHHMM(a.joinedAt),
+          endedAt: a.leftAt ? toHHMM(a.leftAt) : toHHMM(a.joinedAt),
+          recordedAt: a.leftAt ?? a.joinedAt,
+        }
+      : undefined,
+    feedback: a.feedback
+      ? {
+          rating: a.rating ?? 0,
+          notes: a.feedback.notes ?? "",
+          improvements: a.feedback.areasOfImprovement ?? "",
+          submittedAt: a.completedAt ?? a.bookedAt,
+        }
+      : undefined,
+  };
+}
+
+function toMentorNotification(a: ApiNotification): MentorNotification {
+  return {
+    id: a.id,
+    type: mapNotifType(a.type),
+    message: a.message,
+    isRead: a.is_read,
+    createdAt: a.created_at,
+    sessionId: a.reference_id ?? undefined,
+  };
+}
 
 function getInitials(name: string): string {
   return name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase();
@@ -42,14 +136,6 @@ function formatShortDate(dateStr: string): string {
   return new Date(dateStr + "T00:00:00").toLocaleDateString("en-US", {
     weekday: "short",
     month: "short",
-    day: "numeric",
-  });
-}
-
-function formatLongDate(dateStr: string): string {
-  return new Date(dateStr + "T00:00:00").toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "long",
     day: "numeric",
   });
 }
@@ -76,10 +162,10 @@ function getDayContext(dateStr: string): "today" | "tomorrow" | null {
 // ─── Sparklines ───────────────────────────────────────────────────────────────
 
 const SPARKLINES: Record<string, number[]> = {
-  upcoming:   [2, 3, 4, 3, 5, 4, 6],
-  completed:  [4, 5, 6, 7, 5, 8, 7],
-  learners:   [1, 2, 3, 4, 4, 5, 6],
-  rating:     [4, 5, 5, 4, 5, 5, 5],
+  upcoming:  [2, 3, 4, 3, 5, 4, 6],
+  completed: [4, 5, 6, 7, 5, 8, 7],
+  learners:  [1, 2, 3, 4, 4, 5, 6],
+  rating:    [4, 5, 5, 4, 5, 5, 5],
 };
 
 function Sparkline({ bars, color }: { bars: number[]; color: string }) {
@@ -162,9 +248,9 @@ function DashboardSkeleton() {
 // ─── Session row ──────────────────────────────────────────────────────────────
 
 const SESSION_STATUS_CONFIG = {
-  upcoming:           { label: "Upcoming",         badgeClass: "bg-info-light text-info" },
-  completed:          { label: "Completed",         badgeClass: "bg-success-light text-success-dark" },
-  cancelled:          { label: "Cancelled",         badgeClass: "bg-muted text-text-muted" },
+  upcoming:             { label: "Upcoming",         badgeClass: "bg-info-light text-info" },
+  completed:            { label: "Completed",         badgeClass: "bg-success-light text-success-dark" },
+  cancelled:            { label: "Cancelled",         badgeClass: "bg-muted text-text-muted" },
   "reschedule-pending": { label: "Pending Approval", badgeClass: "bg-warning-light text-warning-dark" },
 };
 
@@ -228,16 +314,26 @@ function RescheduleRequestCard({
 
   const handleAccept = async () => {
     setActionState("accepting");
-    await new Promise((r) => setTimeout(r, 800));
-    acceptRescheduleRequest(session.id);
-    onAction();
+    const res = await fetch(`/api/mentor/sessions/${session.id}/accept-reschedule`, {
+      method: "POST",
+    });
+    if (res.ok) {
+      onAction();
+    } else {
+      setActionState("idle");
+    }
   };
 
   const handleDecline = async () => {
     setActionState("declining");
-    await new Promise((r) => setTimeout(r, 800));
-    declineRescheduleRequest(session.id);
-    onAction();
+    const res = await fetch(`/api/mentor/sessions/${session.id}/decline-reschedule`, {
+      method: "POST",
+    });
+    if (res.ok) {
+      onAction();
+    } else {
+      setActionState("idle");
+    }
   };
 
   return (
@@ -305,11 +401,11 @@ function RescheduleRequestCard({
 // ─── Notification row ─────────────────────────────────────────────────────────
 
 const NOTIF_ICONS = {
-  booking:      { icon: CalendarDays, color: "text-primary",    bg: "bg-primary/10" },
-  cancellation: { icon: X,            color: "text-destructive", bg: "bg-destructive-light" },
+  booking:      { icon: CalendarDays, color: "text-primary",     bg: "bg-primary/10" },
+  cancellation: { icon: X,            color: "text-destructive",  bg: "bg-destructive-light" },
   reschedule:   { icon: Hourglass,    color: "text-warning-dark", bg: "bg-warning-light" },
-  rating:       { icon: Star,         color: "text-secondary",   bg: "bg-secondary/10" },
-  message:      { icon: Bell,         color: "text-accent",      bg: "bg-accent/10" },
+  rating:       { icon: Star,         color: "text-secondary",    bg: "bg-secondary/10" },
+  message:      { icon: Bell,         color: "text-accent",       bg: "bg-accent/10" },
 };
 
 function NotificationRow({ notif, onRead }: { notif: MentorNotification; onRead: (id: string) => void }) {
@@ -339,21 +435,48 @@ function NotificationRow({ notif, onRead }: { notif: MentorNotification; onRead:
 // ─── Main component ────────────────────────────────────────────────────────────
 
 export default function MentorDashboard() {
+  const router = useRouter();
   const [sessions, setSessions] = useState<MentorSession[]>([]);
   const [notifications, setNotifications] = useState<MentorNotification[]>([]);
   const [loading, setLoading] = useState(true);
+  const [mentorName, setMentorName] = useState("Mentor");
+  const [mentorTitle, setMentorTitle] = useState("");
 
-  const load = () => {
-    setSessions([...getMentorSessions()]);
-    setNotifications([...getMentorNotifications()]);
+  const load = async () => {
+    // Guard: redirect to onboarding if profile or first slot not yet created
+    const statusRes = await fetch("/api/onboarding/mentor/status");
+    if (statusRes.ok) {
+      const status = await statusRes.json();
+      if (!status.profileComplete || status.slotCount === 0) {
+        router.replace("/mentor/onboarding");
+        return;
+      }
+    }
+
+    const [sessRes, notifRes, profileRes] = await Promise.all([
+      fetch("/api/mentor/sessions"),
+      fetch("/api/mentor/notifications"),
+      fetch("/api/mentor/profile"),
+    ]);
+
+    if (sessRes.ok) {
+      const data: ApiSession[] = await sessRes.json();
+      setSessions(data.map(toMentorSession));
+    }
+    if (notifRes.ok) {
+      const data: ApiNotification[] = await notifRes.json();
+      setNotifications(data.map(toMentorNotification));
+    }
+    if (profileRes.ok) {
+      const data = await profileRes.json();
+      setMentorName(data.name ?? "Mentor");
+      setMentorTitle(data.title ?? "");
+    }
   };
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      load();
-      setLoading(false);
-    }, 700);
-    return () => clearTimeout(timer);
+    load().finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Derived data
@@ -372,14 +495,22 @@ export default function MentorDashboard() {
   const unreadCount = notifications.filter((n) => !n.isRead).length;
   const todaySession = upcoming.find((s) => getDayContext(s.date) === "today");
 
-  // After accept/decline, reload state
+  // Compute avg rating from real data
+  const ratedSessions = sessions.filter((s) => s.feedback?.rating);
+  const avgRating =
+    ratedSessions.length > 0
+      ? (ratedSessions.reduce((a, s) => a + (s.feedback?.rating ?? 0), 0) / ratedSessions.length).toFixed(1)
+      : "—";
+
   const handleRescheduleAction = () => {
     load();
   };
 
-  const handleMarkRead = (id: string) => {
-    markNotificationRead(id);
-    load();
+  const handleMarkRead = async (id: string) => {
+    await fetch(`/api/mentor/notifications/${id}/read`, { method: "PATCH" });
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === id ? { ...n, isRead: true } : n))
+    );
   };
 
   return (
@@ -393,8 +524,8 @@ export default function MentorDashboard() {
             : `${upcoming.length} upcoming session${upcoming.length !== 1 ? "s" : ""} scheduled`
           : "Your mentoring command center."
       }
-      userName="Alex Johnson"
-      userTitle="Senior Engineer"
+      userName={mentorName}
+      userTitle={mentorTitle}
     >
       {loading ? (
         <DashboardSkeleton />
@@ -454,8 +585,8 @@ export default function MentorDashboard() {
             />
             <StatCard
               label="Average Rating"
-              value="4.9"
-              sub="Based on 8 reviews"
+              value={avgRating}
+              sub={ratedSessions.length > 0 ? `Based on ${ratedSessions.length} review${ratedSessions.length !== 1 ? "s" : ""}` : "No reviews yet"}
               icon={Star}
               iconBg="bg-accent/10"
               iconColor="text-accent"
@@ -559,7 +690,6 @@ export default function MentorDashboard() {
                   </Link>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
-                  {/* Completion rate */}
                   <div className="rounded-lg bg-muted/50 p-3 space-y-2">
                     <div className="flex items-center gap-1.5">
                       <TrendingUp className="h-3.5 w-3.5 text-success" />
@@ -571,21 +701,21 @@ export default function MentorDashboard() {
                     </div>
                     <p className="text-[10px] text-text-muted">{completed.length} of {endedSessions} concluded</p>
                   </div>
-                  {/* Rating */}
                   <div className="rounded-lg bg-muted/50 p-3 space-y-2">
                     <div className="flex items-center gap-1.5">
                       <Star className="h-3.5 w-3.5 text-accent" />
                       <p className="text-xs font-medium text-text-secondary">Avg Rating</p>
                     </div>
-                    <p className="text-2xl font-bold text-text-primary tabular-nums">4.9</p>
+                    <p className="text-2xl font-bold text-text-primary tabular-nums">{avgRating}</p>
                     <div className="flex gap-0.5">
                       {[1, 2, 3, 4, 5].map((i) => (
                         <Star key={i} className="h-3 w-3 text-accent" style={{ fill: "currentColor" }} />
                       ))}
                     </div>
-                    <p className="text-[10px] text-text-muted">Based on 8 reviews</p>
+                    <p className="text-[10px] text-text-muted">
+                      {ratedSessions.length > 0 ? `Based on ${ratedSessions.length} reviews` : "No reviews yet"}
+                    </p>
                   </div>
-                  {/* Hours */}
                   <div className="rounded-lg bg-muted/50 p-3">
                     <div className="flex items-center gap-1.5 mb-2">
                       <Clock className="h-3.5 w-3.5 text-info" />
@@ -594,7 +724,6 @@ export default function MentorDashboard() {
                     <p className="text-2xl font-bold text-text-primary tabular-nums">{hoursDelivered}h</p>
                     <p className="text-[10px] text-text-muted mt-1">Across {completed.length} sessions</p>
                   </div>
-                  {/* Learners */}
                   <div className="rounded-lg bg-muted/50 p-3">
                     <div className="flex items-center gap-1.5 mb-2">
                       <Users className="h-3.5 w-3.5 text-secondary" />
@@ -662,9 +791,9 @@ export default function MentorDashboard() {
               <div className="rounded-xl border border-border bg-card p-5 space-y-1">
                 <p className="text-sm font-bold text-text-primary mb-3">Quick Actions</p>
                 {[
-                  { label: "Manage Availability", sub: "Set your open slots", href: "/mentor/availability", icon: CalendarDays, color: "text-primary", bg: "bg-primary/10" },
-                  { label: "View All Sessions",   sub: "Upcoming & past sessions", href: "/mentor/sessions",     icon: BookOpen,      color: "text-secondary", bg: "bg-secondary/10" },
-                  { label: "Performance Metrics", sub: "Ratings & session stats",  href: "/mentor/performance",  icon: BarChart2,     color: "text-accent",    bg: "bg-accent/10" },
+                  { label: "Manage Availability", sub: "Set your open slots",       href: "/mentor/availability", icon: CalendarDays, color: "text-primary",   bg: "bg-primary/10" },
+                  { label: "View All Sessions",   sub: "Upcoming & past sessions",  href: "/mentor/sessions",     icon: BookOpen,      color: "text-secondary", bg: "bg-secondary/10" },
+                  { label: "Performance Metrics", sub: "Ratings & session stats",   href: "/mentor/performance",  icon: BarChart2,     color: "text-accent",    bg: "bg-accent/10" },
                 ].map((a) => (
                   <Link
                     key={a.href}

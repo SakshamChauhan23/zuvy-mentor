@@ -14,18 +14,79 @@ import {
   Lock,
 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
-import {
-  getAvailabilitySlots,
-  getSlotsByDate,
-  addAvailabilitySlot,
-  deleteAvailabilitySlot,
-  checkConflict,
-  addMinutesToTime,
-  timeToMinutes,
-} from "@/lib/mock/availability";
 import { formatTime, formatDuration } from "@/lib/mock/slots";
 import { cn } from "@/lib/utils";
 import type { MentorAvailabilitySlot } from "@/lib/types/availability";
+
+// ─── Slot utilities ───────────────────────────────────────────────────────────
+
+function timeToMinutes(time: string): number {
+  const [h, m] = time.split(":").map(Number);
+  return h * 60 + m;
+}
+
+function addMinutesToTime(time: string, minutes: number): string {
+  const total = timeToMinutes(time) + minutes;
+  const h = Math.floor(total / 60) % 24;
+  const m = total % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+function toDateStr(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function toHHMM(iso: string): string {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+interface ApiSlot {
+  id: string;
+  slotStart: string;
+  slotEnd: string;
+  durationMinutes: number;
+  status: "open" | "booked";
+  createdAt: string;
+}
+
+function toAvailabilitySlot(a: ApiSlot): MentorAvailabilitySlot {
+  return {
+    id: a.id,
+    date: toDateStr(a.slotStart),
+    startTime: toHHMM(a.slotStart),
+    endTime: toHHMM(a.slotEnd),
+    durationMinutes: a.durationMinutes,
+    status: a.status,
+    createdAt: a.createdAt,
+  };
+}
+
+function groupSlotsByDate(slots: MentorAvailabilitySlot[]): Record<string, MentorAvailabilitySlot[]> {
+  const grouped: Record<string, MentorAvailabilitySlot[]> = {};
+  for (const slot of slots) {
+    if (!grouped[slot.date]) grouped[slot.date] = [];
+    grouped[slot.date].push(slot);
+  }
+  return grouped;
+}
+
+function checkConflict(
+  slots: MentorAvailabilitySlot[],
+  date: string,
+  startTime: string,
+  durationMinutes: number
+): MentorAvailabilitySlot | undefined {
+  const newStart = timeToMinutes(startTime);
+  const newEnd = newStart + durationMinutes;
+  return slots.find((s) => {
+    if (s.date !== date) return false;
+    const exStart = timeToMinutes(s.startTime);
+    const exEnd = timeToMinutes(s.endTime);
+    return exStart < newEnd && exEnd > newStart;
+  });
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -81,7 +142,7 @@ function SlotItem({
   onDelete,
 }: {
   slot: MentorAvailabilitySlot;
-  onDelete: (id: string) => void;
+  onDelete: (id: string) => Promise<void>;
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -95,8 +156,8 @@ function SlotItem({
 
   const handleDelete = async () => {
     setDeleting(true);
-    await new Promise((r) => setTimeout(r, 500));
-    onDelete(slot.id);
+    await onDelete(slot.id);
+    setDeleting(false);
   };
 
   return (
@@ -172,6 +233,8 @@ export default function AvailabilityPage() {
   const [slots, setSlots] = useState<MentorAvailabilitySlot[]>([]);
   const [slotsByDate, setSlotsByDate] = useState<Record<string, MentorAvailabilitySlot[]>>({});
   const [loading, setLoading] = useState(true);
+  const [mentorName, setMentorName] = useState("Mentor");
+  const [mentorTitle, setMentorTitle] = useState("");
 
   // Form state
   const [date, setDate] = useState(getTomorrowStr());
@@ -182,23 +245,35 @@ export default function AvailabilityPage() {
 
   const endTime = addMinutesToTime(startTime, duration);
 
-  const loadSlots = () => {
-    setSlots(getAvailabilitySlots());
-    setSlotsByDate(getSlotsByDate());
+  const loadSlots = async () => {
+    const res = await fetch("/api/mentor/slots");
+    if (res.ok) {
+      const data: ApiSlot[] = await res.json();
+      const mapped = data.map(toAvailabilitySlot);
+      setSlots(mapped);
+      setSlotsByDate(groupSlotsByDate(mapped));
+    }
   };
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      loadSlots();
+    const init = async () => {
+      const profileRes = await fetch("/api/mentor/profile");
+      if (profileRes.ok) {
+        const p = await profileRes.json();
+        setMentorName(p.name ?? "Mentor");
+        setMentorTitle(p.title ?? "");
+      }
+      await loadSlots();
       setLoading(false);
-    }, 500);
-    return () => clearTimeout(timer);
+    };
+    init();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Live conflict detection
+  // Live conflict detection (client-side using loaded slots)
   const conflictingSlot = useMemo(() => {
     if (!date || !startTime) return undefined;
-    return checkConflict(date, startTime, duration);
+    return checkConflict(slots, date, startTime, duration);
   }, [date, startTime, duration, slots]);
 
   // Validate: date must be >= today, end time must not exceed midnight
@@ -211,13 +286,21 @@ export default function AvailabilityPage() {
     if (!isFormValid || formState !== "idle") return;
     setFormState("creating");
 
-    await new Promise((r) => setTimeout(r, 800));
+    // Construct ISO timestamps from local date + HH:MM
+    const slotStart = new Date(`${date}T${startTime}:00`).toISOString();
+    const slotEnd = new Date(`${date}T${endTime}:00`).toISOString();
 
-    const result = addAvailabilitySlot(date, startTime, duration);
-    if (result.success) {
-      setCreatedSlot(result.slot);
+    const res = await fetch("/api/mentor/slots", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ slotStart, slotEnd, durationMinutes: duration }),
+    });
+
+    if (res.ok) {
+      const data: ApiSlot = await res.json();
+      setCreatedSlot(toAvailabilitySlot(data));
       setFormState("success");
-      loadSlots();
+      await loadSlots();
     } else {
       setFormState("error");
     }
@@ -231,9 +314,9 @@ export default function AvailabilityPage() {
     setDuration(60);
   };
 
-  const handleDelete = (id: string) => {
-    deleteAvailabilitySlot(id);
-    loadSlots();
+  const handleDelete = async (id: string) => {
+    await fetch(`/api/mentor/slots/${id}`, { method: "DELETE" });
+    await loadSlots();
   };
 
   const openCount = slots.filter((s) => s.status === "open").length;
@@ -244,8 +327,8 @@ export default function AvailabilityPage() {
       role="mentor"
       pageTitle="Availability"
       pageSubtitle={!loading ? `${openCount} open slot${openCount !== 1 ? "s" : ""} · ${bookedCount} booked` : "Manage your available time slots."}
-      userName="Alex Johnson"
-      userTitle="Senior Engineer"
+      userName={mentorName}
+      userTitle={mentorTitle}
     >
       <div className="max-w-5xl">
         {loading ? (

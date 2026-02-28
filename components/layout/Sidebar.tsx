@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard,
   Users,
@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 
 // ─── Nav config per role ───────────────────────────────────────────────────────
 
@@ -56,7 +57,14 @@ interface SidebarProps {
 
 export default function Sidebar({ role, userName = "User", userTitle, userAvatar }: SidebarProps) {
   const pathname = usePathname();
+  const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
+
+  const handleSignOut = async () => {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    router.push("/login");
+  };
 
   const navItems =
     role === "learner" ? learnerNav :
@@ -166,6 +174,7 @@ export default function Sidebar({ role, userName = "User", userTitle, userAvatar
 
         {/* Logout */}
         <button
+          onClick={handleSignOut}
           className={cn(
             "flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
             "text-text-secondary hover:bg-destructive-light hover:text-destructive",

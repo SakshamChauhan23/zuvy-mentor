@@ -16,8 +16,7 @@ import {
   CalendarX,
 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
-import { getSessionById, rescheduleSession } from "@/lib/mock/sessions";
-import { generateSlotsForMentor, groupSlotsByDate, formatTime, formatDuration } from "@/lib/mock/slots";
+import { formatTime, formatDuration } from "@/lib/mock/slots";
 import SlotCard from "@/components/availability/SlotCard";
 import { cn } from "@/lib/utils";
 import type { BookedSession } from "@/lib/types/session";
@@ -33,6 +32,38 @@ const REASON_MAX = 500;
 type PageState = "loading" | "pick-slot" | "confirm" | "submitting" | "success" | "error" | "invalid";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function toHHMM(iso: string) {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+function toDateStr(iso: string) {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function dateLabel(dateStr: string): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
+  if (date.getTime() === today.getTime()) return "Today";
+  if (date.getTime() === tomorrow.getTime()) return "Tomorrow";
+  return date.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+}
+
+function groupByDate(slots: TimeSlot[]): SlotsByDate[] {
+  const map = new Map<string, TimeSlot[]>();
+  for (const slot of slots) {
+    const arr = map.get(slot.date) ?? [];
+    arr.push(slot);
+    map.set(slot.date, arr);
+  }
+  return Array.from(map.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([date, s]) => ({ date, label: dateLabel(date), slots: s }));
+}
 
 function formatLongDate(dateStr: string): string {
   return new Date(dateStr + "T00:00:00").toLocaleDateString("en-US", {
@@ -130,10 +161,12 @@ function SlotGroups({
   groups,
   selectedSlot,
   onSelect,
+  mentorFirstName,
 }: {
   groups: SlotsByDate[];
   selectedSlot: TimeSlot | null;
   onSelect: (slot: TimeSlot) => void;
+  mentorFirstName: string;
 }) {
   if (groups.length === 0) {
     return (
@@ -142,7 +175,7 @@ function SlotGroups({
         <div>
           <p className="text-sm font-semibold text-text-primary">No available slots</p>
           <p className="text-xs text-text-muted mt-0.5">
-            {session?.mentorName.split(" ")[0]} has no open slots in the next 12 days.
+            {mentorFirstName} has no open slots right now.
           </p>
         </div>
         <Link
@@ -203,10 +236,6 @@ function SelectedSummary({ slot }: { slot: TimeSlot }) {
   );
 }
 
-// ─── Dummy session reference for empty state (module-level hack) ──────────────
-// SlotGroups needs session name for empty state — we pass it via closure.
-let session: BookedSession | null = null;
-
 // ─── Main component ────────────────────────────────────────────────────────────
 
 export default function ReschedulePageContent({
@@ -224,28 +253,64 @@ export default function ReschedulePageContent({
   const [reason, setReason] = useState("");
   const [reasonError, setReasonError] = useState<string | null>(null);
 
-  // Load session + slots
+  // Load session + mentor slots
   useEffect(() => {
-    const timer = setTimeout(() => {
-      const found = getSessionById(id);
-      if (!found) { setPageState("invalid"); return; }
-      if (found.status !== "upcoming" && found.status !== "rescheduled") {
-        setPageState("invalid"); return;
-      }
+    fetch(`/api/sessions/${id}`)
+      .then(async (res) => {
+        if (res.status === 404) { setPageState("invalid"); return; }
+        if (!res.ok) throw new Error("Failed to fetch");
+        return res.json();
+      })
+      .then(async (data) => {
+        if (!data) return;
 
-      // Generate available slots, exclude the current slot to avoid identical re-booking
-      const rawSlots = generateSlotsForMentor(found.mentorId);
-      const filtered = rawSlots.filter(
-        (s) => !(s.date === found.date && s.startTime === found.startTime)
-      );
-      const groups = groupSlotsByDate(filtered);
+        if (data.status !== "upcoming" && data.status !== "rescheduled") {
+          setPageState("invalid");
+          return;
+        }
 
-      session = found; // for SlotGroups empty state closure
-      setCurrentSession(found);
-      setSlotGroups(groups);
-      setPageState("pick-slot");
-    }, 600);
-    return () => clearTimeout(timer);
+        const session: BookedSession = {
+          id: data.id,
+          mentorId: data.mentorProfileId,
+          mentorName: data.mentorName,
+          mentorTitle: data.mentorTitle,
+          isVerified: data.isVerified,
+          date: toDateStr(data.slotStart),
+          startTime: toHHMM(data.slotStart),
+          endTime: toHHMM(data.slotEnd),
+          durationMinutes: data.durationMinutes,
+          status: data.status,
+          bookedAt: data.bookedAt,
+        };
+        setCurrentSession(session);
+
+        // Fetch available slots for this mentor
+        const slotsRes = await fetch(`/api/mentors/${data.mentorProfileId}/availability`);
+        if (!slotsRes.ok) throw new Error("Failed to fetch slots");
+
+        const rawSlots: {
+          id: string;
+          slot_start: string;
+          slot_end: string;
+          duration_minutes: number;
+          current_booked_count: number;
+          max_capacity: number;
+        }[] = await slotsRes.json();
+
+        const timeSlots: TimeSlot[] = rawSlots.map((s) => ({
+          id: s.id,
+          mentorId: data.mentorProfileId,
+          date: toDateStr(s.slot_start),
+          startTime: toHHMM(s.slot_start),
+          endTime: toHHMM(s.slot_end),
+          durationMinutes: s.duration_minutes,
+          isBooked: s.current_booked_count >= s.max_capacity,
+        }));
+
+        setSlotGroups(groupByDate(timeSlots));
+        setPageState("pick-slot");
+      })
+      .catch(() => setPageState("invalid"));
   }, [id]);
 
   // Reason validation
@@ -258,26 +323,26 @@ export default function ReschedulePageContent({
     return true;
   };
 
-  // Submit
+  // Submit reschedule
   const handleSubmit = async () => {
     if (!validateReason() || !selectedSlot) return;
     setPageState("submitting");
 
-    await new Promise((r) => setTimeout(r, 1000));
+    try {
+      const res = await fetch(`/api/sessions/${id}/reschedule`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newSlotId: selectedSlot.id, reason: reason.trim() }),
+      });
 
-    if (Math.random() < 0.1) {
+      if (!res.ok) {
+        setPageState("error");
+        return;
+      }
+      setPageState("success");
+    } catch {
       setPageState("error");
-      return;
     }
-
-    rescheduleSession(id, {
-      proposedDate: selectedSlot.date,
-      proposedStartTime: selectedSlot.startTime,
-      proposedEndTime: selectedSlot.endTime,
-      proposedDurationMinutes: selectedSlot.durationMinutes,
-      reason,
-    });
-    setPageState("success");
   };
 
   const mentorFirstName = currentSession?.mentorName.split(" ")[0] ?? "";
@@ -339,6 +404,7 @@ export default function ReschedulePageContent({
                     groups={slotGroups}
                     selectedSlot={selectedSlot}
                     onSelect={setSelectedSlot}
+                    mentorFirstName={mentorFirstName}
                   />
                 </div>
               </div>
@@ -411,7 +477,6 @@ export default function ReschedulePageContent({
 
               {/* Original → Proposed comparison */}
               <div className="space-y-3">
-                {/* Original (muted/strikethrough) */}
                 <div className="rounded-lg bg-muted px-4 py-3 space-y-1.5">
                   <p className="text-[10px] font-semibold uppercase tracking-wide text-text-muted">Current time</p>
                   <div className="flex flex-wrap gap-x-4 gap-y-1">
@@ -426,14 +491,12 @@ export default function ReschedulePageContent({
                   </div>
                 </div>
 
-                {/* Arrow */}
                 <div className="flex justify-center">
                   <div className="flex h-7 w-7 items-center justify-center rounded-full bg-primary/10">
                     <ArrowDown className="h-4 w-4 text-primary" />
                   </div>
                 </div>
 
-                {/* Proposed (highlighted) */}
                 <div className="rounded-lg border border-primary/30 bg-primary/5 px-4 py-3 space-y-1.5">
                   <p className="text-[10px] font-semibold uppercase tracking-wide text-primary">Proposed new time</p>
                   <div className="flex flex-wrap gap-x-4 gap-y-1">
@@ -599,7 +662,6 @@ export default function ReschedulePageContent({
               </div>
             </div>
 
-            {/* What happens next */}
             <div className="rounded-lg bg-muted px-4 py-3 text-left text-xs text-text-secondary space-y-1">
               <p className="font-medium text-text-primary">What happens next</p>
               <p>• Your request has been sent to {mentorFirstName} for review</p>

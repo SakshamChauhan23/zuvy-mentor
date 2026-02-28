@@ -1,10 +1,7 @@
-import SignupForm from "@/components/auth/SignupForm";
-import type { Metadata } from "next";
+import { redirect } from "next/navigation";
 
-export const metadata: Metadata = {
-  title: "Create Account — Zuvy",
-};
-
+// Sign-up is handled via Google OAuth on the login page.
+// Visiting /signup redirects there directly.
 export default function SignupPage() {
-  return <SignupForm />;
+  redirect("/login");
 }

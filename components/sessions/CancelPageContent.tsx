@@ -15,7 +15,6 @@ import {
   XCircle,
 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
-import { getSessionById, cancelSession } from "@/lib/mock/sessions";
 import { formatTime, formatDuration } from "@/lib/mock/slots";
 import { cn } from "@/lib/utils";
 import type { BookedSession } from "@/lib/types/session";
@@ -30,6 +29,16 @@ const REASON_MAX = 500;
 type PageState = "loading" | "review" | "cancelling" | "success" | "error" | "invalid";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function toHHMM(iso: string) {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+function toDateStr(iso: string) {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 function formatSessionDate(dateStr: string): string {
   return new Date(dateStr + "T00:00:00").toLocaleDateString("en-US", {
@@ -97,17 +106,36 @@ export default function CancelPageContent({
   const [reason, setReason] = useState("");
   const [reasonError, setReasonError] = useState<string | null>(null);
 
-  // Load session
+  // Load session from real API
   useEffect(() => {
-    setTimeout(() => {
-      const found = getSessionById(id);
-      if (!found) { setPageState("invalid"); return; }
-      if (found.status !== "upcoming" && found.status !== "rescheduled") {
-        setPageState("invalid"); return;
-      }
-      setSession(found);
-      setPageState("review");
-    }, 600);
+    fetch(`/api/sessions/${id}`)
+      .then(async (res) => {
+        if (res.status === 404) { setPageState("invalid"); return; }
+        if (!res.ok) throw new Error("Failed to fetch");
+        const data = await res.json();
+
+        if (data.status !== "upcoming" && data.status !== "rescheduled") {
+          setPageState("invalid");
+          return;
+        }
+
+        const s: BookedSession = {
+          id: data.id,
+          mentorId: data.mentorProfileId,
+          mentorName: data.mentorName,
+          mentorTitle: data.mentorTitle,
+          isVerified: data.isVerified,
+          date: toDateStr(data.slotStart),
+          startTime: toHHMM(data.slotStart),
+          endTime: toHHMM(data.slotEnd),
+          durationMinutes: data.durationMinutes,
+          status: data.status,
+          bookedAt: data.bookedAt,
+        };
+        setSession(s);
+        setPageState("review");
+      })
+      .catch(() => setPageState("invalid"));
   }, [id]);
 
   // Validate reason field
@@ -125,17 +153,21 @@ export default function CancelPageContent({
     if (!validateReason()) return;
     setPageState("cancelling");
 
-    // Simulate API call
-    await new Promise((r) => setTimeout(r, 1000));
+    try {
+      const res = await fetch(`/api/sessions/${id}/cancel`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: reason.trim() }),
+      });
 
-    // Simulate occasional failure (10% chance)
-    if (Math.random() < 0.1) {
+      if (!res.ok) {
+        setPageState("error");
+        return;
+      }
+      setPageState("success");
+    } catch {
       setPageState("error");
-      return;
     }
-
-    cancelSession(id);
-    setPageState("success");
   };
 
   const initials = session?.mentorName
@@ -263,7 +295,6 @@ export default function CancelPageContent({
                     reasonError ? "border-destructive" : "border-border"
                   )}
                 />
-                {/* Helper row: error or character count */}
                 <div className="flex items-center justify-between">
                   {reasonError ? (
                     <p className="text-xs text-destructive">{reasonError}</p>
@@ -372,7 +403,6 @@ export default function CancelPageContent({
               </p>
             </div>
 
-            {/* Cancelled session summary */}
             <div className="inline-flex flex-col items-center gap-1 rounded-xl bg-muted px-6 py-4 text-center">
               <p className="text-sm font-semibold text-text-primary line-through text-text-muted">
                 {session.mentorName}
@@ -386,7 +416,6 @@ export default function CancelPageContent({
               </p>
             </div>
 
-            {/* Note */}
             <div className="rounded-lg bg-muted px-4 py-3 text-left text-xs text-text-secondary space-y-1">
               <p className="font-medium text-text-primary">What happens next</p>
               <p>• The session has been removed from your upcoming schedule</p>

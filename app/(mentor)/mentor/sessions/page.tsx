@@ -3,15 +3,80 @@
 import { useState, useEffect, useMemo } from "react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
 import { cn } from "@/lib/utils";
-import {
-  getMentorSessions,
-  acceptRescheduleRequest,
-  declineRescheduleRequest,
-  recordAttendance,
-  completeSession,
-  submitFeedback,
-} from "@/lib/mock/mentor-sessions";
 import type { MentorSession, MentorSessionStatus } from "@/lib/types/mentor-session";
+
+// ─── API helpers ───────────────────────────────────────────────────────────────
+
+function toDateStr(iso: string): string {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function toHHMM(iso: string): string {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+interface ApiSession {
+  id: string;
+  studentId: string;
+  learnerName: string;
+  learnerEmail: string;
+  slotStart: string;
+  slotEnd: string;
+  durationMinutes: number;
+  status: MentorSession["status"];
+  bookedAt: string;
+  cancelReason: string | null;
+  rescheduleReason: string | null;
+  rescheduleNewSlotId: string | null;
+  rescheduleNewSlot: { slotStart: string; slotEnd: string; durationMinutes: number } | null;
+  joinedAt: string | null;
+  leftAt: string | null;
+  completedAt: string | null;
+  feedback: { notes?: string; areasOfImprovement?: string } | null;
+  rating: number | null;
+}
+
+function toMentorSession(a: ApiSession): MentorSession {
+  return {
+    id: a.id,
+    learnerId: a.studentId,
+    learnerName: a.learnerName,
+    learnerRole: a.learnerEmail,
+    date: toDateStr(a.slotStart),
+    startTime: toHHMM(a.slotStart),
+    endTime: toHHMM(a.slotEnd),
+    durationMinutes: a.durationMinutes,
+    status: a.status,
+    bookedAt: a.bookedAt,
+    rescheduleRequest: a.rescheduleNewSlot
+      ? {
+          proposedDate: toDateStr(a.rescheduleNewSlot.slotStart),
+          proposedStartTime: toHHMM(a.rescheduleNewSlot.slotStart),
+          proposedEndTime: toHHMM(a.rescheduleNewSlot.slotEnd),
+          proposedDurationMinutes: a.rescheduleNewSlot.durationMinutes,
+          reason: a.rescheduleReason ?? "",
+          requestedAt: a.bookedAt,
+        }
+      : undefined,
+    attendance: a.joinedAt
+      ? {
+          startedAt: toHHMM(a.joinedAt),
+          endedAt: a.leftAt ? toHHMM(a.leftAt) : toHHMM(a.joinedAt),
+          recordedAt: a.leftAt ?? a.joinedAt,
+        }
+      : undefined,
+    feedback: a.feedback
+      ? {
+          rating: a.rating ?? 0,
+          notes: a.feedback.notes ?? "",
+          improvements: a.feedback.areasOfImprovement ?? "",
+          submittedAt: a.completedAt ?? a.bookedAt,
+        }
+      : undefined,
+  };
+}
 import {
   Calendar,
   Clock,
@@ -296,32 +361,32 @@ function RescheduleActions({
 }) {
   const [actionState, setActionState] = useState<ActionState>("idle");
 
-  function handleAccept() {
+  async function handleAccept() {
     if (actionState !== "idle") return;
     setActionState("accepting");
-    setTimeout(() => {
-      const ok = acceptRescheduleRequest(session.id);
-      if (ok) {
-        setActionState("done-accept");
-        onAccept();
-      } else {
-        setActionState("idle");
-      }
-    }, 800);
+    const res = await fetch(`/api/mentor/sessions/${session.id}/accept-reschedule`, {
+      method: "POST",
+    });
+    if (res.ok) {
+      setActionState("done-accept");
+      onAccept();
+    } else {
+      setActionState("idle");
+    }
   }
 
-  function handleDecline() {
+  async function handleDecline() {
     if (actionState !== "idle") return;
     setActionState("declining");
-    setTimeout(() => {
-      const ok = declineRescheduleRequest(session.id);
-      if (ok) {
-        setActionState("done-decline");
-        onDecline();
-      } else {
-        setActionState("idle");
-      }
-    }, 800);
+    const res = await fetch(`/api/mentor/sessions/${session.id}/decline-reschedule`, {
+      method: "POST",
+    });
+    if (res.ok) {
+      setActionState("done-decline");
+      onDecline();
+    } else {
+      setActionState("idle");
+    }
   }
 
   if (actionState === "done-accept") {
@@ -434,30 +499,35 @@ function DetailPanel({
     setAttState("review");
   }
 
-  function handleAttendanceConfirm() {
+  async function handleAttendanceConfirm() {
     setAttState("submitting");
-    setTimeout(() => {
-      const ok = recordAttendance(session.id, attStart, attEnd);
-      if (ok) {
-        setAttState("done");
-        onSessionUpdated();
-      } else {
-        setAttState("error");
-      }
-    }, 800);
+    // Construct ISO timestamps using the session's date + local HH:MM
+    const joinedAt = new Date(`${session.date}T${attStart}:00`).toISOString();
+    const leftAt = new Date(`${session.date}T${attEnd}:00`).toISOString();
+    const res = await fetch(`/api/mentor/sessions/${session.id}/attendance`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ joinedAt, leftAt }),
+    });
+    if (res.ok) {
+      setAttState("done");
+      onSessionUpdated();
+    } else {
+      setAttState("error");
+    }
   }
 
-  function handleCompleteConfirm() {
+  async function handleCompleteConfirm() {
     setCompleteState("completing");
-    setTimeout(() => {
-      const ok = completeSession(session.id);
-      if (ok) {
-        setCompleteState("done");
-        onSessionUpdated();
-      } else {
-        setCompleteState("error");
-      }
-    }, 800);
+    const res = await fetch(`/api/mentor/sessions/${session.id}/complete`, {
+      method: "POST",
+    });
+    if (res.ok) {
+      setCompleteState("done");
+      onSessionUpdated();
+    } else {
+      setCompleteState("error");
+    }
   }
 
   return (
@@ -926,17 +996,19 @@ function DetailPanel({
                     ← Edit
                   </button>
                   <button
-                    onClick={() => {
+                    onClick={async () => {
                       setFbState("submitting");
-                      setTimeout(() => {
-                        const ok = submitFeedback(session.id, {
+                      const res = await fetch(`/api/mentor/sessions/${session.id}/feedback`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
                           rating: fbRating,
                           notes: fbNotes,
                           improvements: fbImprovements,
-                        });
-                        if (ok) { setFbState("done"); onSessionUpdated(); }
-                        else setFbState("error");
-                      }, 800);
+                        }),
+                      });
+                      if (res.ok) { setFbState("done"); onSessionUpdated(); }
+                      else setFbState("error");
                     }}
                     className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground hover:bg-primary/90 transition-colors"
                   >
@@ -1036,19 +1108,37 @@ export default function MentorSessionsPage() {
   const [activeTab, setActiveTab] = useState<Tab>("all");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showDetailMobile, setShowDetailMobile] = useState(false);
+  const [mentorName, setMentorName] = useState("Mentor");
+  const [mentorTitle, setMentorTitle] = useState("");
 
-  // Simulate load
+  const fetchSessions = async () => {
+    const res = await fetch("/api/mentor/sessions");
+    if (res.ok) {
+      const data: ApiSession[] = await res.json();
+      setSessions(data.map(toMentorSession));
+    }
+  };
+
   useEffect(() => {
-    const t = setTimeout(() => {
-      setSessions(getMentorSessions());
+    const load = async () => {
+      const [profileRes] = await Promise.all([
+        fetch("/api/mentor/profile"),
+        fetchSessions(),
+      ]);
+      if (profileRes.ok) {
+        const p = await profileRes.json();
+        setMentorName(p.name ?? "Mentor");
+        setMentorTitle(p.title ?? "");
+      }
       setLoading(false);
-    }, 600);
-    return () => clearTimeout(t);
+    };
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Refresh sessions from store (after accept/decline)
+  // Refresh sessions from API (after accept/decline/attendance/complete)
   function refreshSessions() {
-    setSessions([...getMentorSessions()]);
+    fetchSessions();
   }
 
   // Filtered + sorted lists per tab
@@ -1095,8 +1185,8 @@ export default function MentorSessionsPage() {
       role="mentor"
       pageTitle="Sessions"
       pageSubtitle="Manage your mentoring sessions and respond to learner requests"
-      userName="Alex Johnson"
-      userTitle="Senior Mentor"
+      userName={mentorName}
+      userTitle={mentorTitle}
       topbarActions={
         pendingCount > 0 ? (
           <div className="hidden sm:flex items-center gap-2 rounded-lg bg-warning-light border border-warning/30 px-3 py-1.5">

@@ -14,13 +14,32 @@ import {
   Users,
 } from "lucide-react";
 import DashboardLayout from "@/components/layout/DashboardLayout";
-import { getMentorById } from "@/lib/mock/mentors";
-import { generateSlotsForMentor, groupSlotsByDate, formatTime, formatDuration } from "@/lib/mock/slots";
-import { addBookedSession } from "@/lib/mock/sessions";
+import { formatTime, formatDuration } from "@/lib/mock/slots";
 import { cn } from "@/lib/utils";
 import type { Mentor } from "@/lib/types/mentor";
-import type { TimeSlot, SlotsByDate } from "@/lib/types/slot";
-import type { BookedSession } from "@/lib/types/session";
+import type { TimeSlot } from "@/lib/types/slot";
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function toHHMM(iso: string) {
+  const d = new Date(iso);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+}
+
+function toDateStr(iso: string) {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function getDateLabel(dateStr: string): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const date = new Date(y, m - 1, d);
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
+  if (date.getTime() === today.getTime()) return "Today";
+  if (date.getTime() === tomorrow.getTime()) return "Tomorrow";
+  return "";
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -101,29 +120,53 @@ export default function ConfirmPageContent({
   const [pageState, setPageState] = useState<PageState>("loading");
   const [mentor, setMentor] = useState<Mentor | null>(null);
   const [slot, setSlot] = useState<TimeSlot | null>(null);
-  const [dateLabel, setDateLabel] = useState<string>("");
-  const [bookedSession, setBookedSession] = useState<BookedSession | null>(null);
+  const [label, setLabel] = useState("");
+  const [bookingId, setBookingId] = useState<string | null>(null);
 
-  // Load mentor + slot
+  // Load mentor + slot from real APIs
   useEffect(() => {
-    setTimeout(() => {
-      if (!slotId) { setPageState("invalid"); return; }
+    if (!slotId) { setPageState("invalid"); return; }
 
-      const foundMentor = getMentorById(id);
-      if (!foundMentor) { setPageState("invalid"); return; }
+    Promise.all([
+      fetch(`/api/mentors/${id}`),
+      fetch(`/api/mentors/${id}/availability`),
+    ])
+      .then(async ([mentorRes, slotsRes]) => {
+        if (mentorRes.status === 404) { setPageState("invalid"); return; }
+        if (!mentorRes.ok || !slotsRes.ok) throw new Error("Failed to fetch");
 
-      const slots = generateSlotsForMentor(id);
-      const foundSlot = slots.find((s) => s.id === slotId);
-      if (!foundSlot || foundSlot.isBooked) { setPageState("invalid"); return; }
+        const mentorData: Mentor = await mentorRes.json();
+        const rawSlots: {
+          id: string;
+          slot_start: string;
+          slot_end: string;
+          duration_minutes: number;
+          current_booked_count: number;
+          max_capacity: number;
+        }[] = await slotsRes.json();
 
-      const groups: SlotsByDate[] = groupSlotsByDate(slots);
-      const group = groups.find((g) => g.date === foundSlot.date);
+        const foundRaw = rawSlots.find((s) => s.id === slotId);
+        if (!foundRaw || foundRaw.current_booked_count >= foundRaw.max_capacity) {
+          setPageState("invalid");
+          return;
+        }
 
-      setMentor(foundMentor);
-      setSlot(foundSlot);
-      setDateLabel(group?.label ?? foundSlot.date);
-      setPageState("review");
-    }, 600);
+        const foundSlot: TimeSlot = {
+          id: foundRaw.id,
+          mentorId: id,
+          date: toDateStr(foundRaw.slot_start),
+          startTime: toHHMM(foundRaw.slot_start),
+          endTime: toHHMM(foundRaw.slot_end),
+          durationMinutes: foundRaw.duration_minutes,
+          isBooked: false,
+        };
+
+        setMentor(mentorData);
+        setSlot(foundSlot);
+        setLabel(getDateLabel(foundSlot.date));
+        setPageState("review");
+      })
+      .catch(() => setPageState("invalid"));
   }, [id, slotId]);
 
   // Confirm booking handler
@@ -131,37 +174,29 @@ export default function ConfirmPageContent({
     if (!mentor || !slot || pageState !== "review") return;
     setPageState("confirming");
 
-    // Simulate API call
-    await new Promise((r) => setTimeout(r, 1200));
+    try {
+      const res = await fetch("/api/bookings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slotId: slot.id }),
+      });
 
-    // Simulate occasional failure for demo (10% chance)
-    if (Math.random() < 0.1) {
+      if (!res.ok) {
+        if (res.status === 409) { setPageState("invalid"); return; }
+        setPageState("error");
+        return;
+      }
+
+      const { bookingId: newBookingId } = await res.json();
+      setBookingId(newBookingId);
+      setPageState("success");
+    } catch {
       setPageState("error");
-      return;
     }
-
-    const session: BookedSession = {
-      id: `session-${Date.now()}`,
-      mentorId: mentor.id,
-      mentorName: mentor.name,
-      mentorTitle: mentor.title,
-      isVerified: mentor.isVerified,
-      date: slot.date,
-      startTime: slot.startTime,
-      endTime: slot.endTime,
-      durationMinutes: slot.durationMinutes,
-      status: "upcoming",
-      bookedAt: new Date().toISOString(),
-    };
-
-    addBookedSession(session);
-    setBookedSession(session);
-    setPageState("success");
   };
 
   const initials = mentor?.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase() ?? "";
 
-  // ── Layout wrapper ──────────────────────────────────────────────────────────
   return (
     <DashboardLayout
       role="learner"
@@ -197,7 +232,6 @@ export default function ConfirmPageContent({
         {/* ── Review ───────────────────────────────────────────── */}
         {(pageState === "review" || pageState === "confirming") && mentor && slot && (
           <>
-            {/* Back link */}
             <Link
               href={`/mentors/${id}/book`}
               className="mb-6 inline-flex items-center gap-1.5 text-sm text-text-muted hover:text-text-primary transition-colors"
@@ -207,7 +241,6 @@ export default function ConfirmPageContent({
             </Link>
 
             <div className="rounded-xl border border-border bg-card p-6 space-y-6">
-              {/* Heading */}
               <div>
                 <h2 className="text-lg font-bold text-text-primary">Confirm your booking</h2>
                 <p className="text-sm text-text-muted mt-0.5">
@@ -245,7 +278,7 @@ export default function ConfirmPageContent({
                   value={new Date(slot.date + "T00:00:00").toLocaleDateString("en-US", {
                     weekday: "long", month: "long", day: "numeric", year: "numeric",
                   })}
-                  sub={dateLabel === "Today" || dateLabel === "Tomorrow" ? dateLabel : undefined}
+                  sub={label || undefined}
                 />
 
                 <DetailRow
@@ -340,16 +373,14 @@ export default function ConfirmPageContent({
         )}
 
         {/* ── Success ─────────────────────────────────────────── */}
-        {pageState === "success" && bookedSession && (
+        {pageState === "success" && mentor && slot && (
           <div className="rounded-xl border border-border bg-card p-8 space-y-6 text-center">
-            {/* Icon */}
             <div className="flex justify-center">
               <div className="flex h-16 w-16 items-center justify-center rounded-full bg-success-light">
                 <CheckCircle2 className="h-8 w-8 text-success" />
               </div>
             </div>
 
-            {/* Heading */}
             <div>
               <h2 className="text-xl font-bold text-text-primary">Session Confirmed!</h2>
               <p className="text-sm text-text-muted mt-1.5">
@@ -359,14 +390,19 @@ export default function ConfirmPageContent({
 
             {/* Session summary pill */}
             <div className="inline-flex flex-col items-center gap-1 rounded-xl bg-muted px-6 py-4 text-center">
-              <p className="text-sm font-semibold text-text-primary">{bookedSession.mentorName}</p>
+              <p className="text-sm font-semibold text-text-primary">{mentor.name}</p>
               <p className="text-xs text-text-muted">
-                {new Date(bookedSession.date + "T00:00:00").toLocaleDateString("en-US", {
+                {new Date(slot.date + "T00:00:00").toLocaleDateString("en-US", {
                   weekday: "short", month: "short", day: "numeric",
                 })}
                 {" · "}
-                {formatTime(bookedSession.startTime)}
+                {formatTime(slot.startTime)}
               </p>
+              {bookingId && (
+                <p className="text-[10px] text-text-muted mt-1 font-mono">
+                  #{bookingId.slice(0, 8)}
+                </p>
+              )}
             </div>
 
             {/* What happens next */}
@@ -379,7 +415,6 @@ export default function ConfirmPageContent({
               </ul>
             </div>
 
-            {/* CTAs */}
             <div className="flex flex-col gap-2.5 pt-1">
               <Link
                 href="/sessions"
