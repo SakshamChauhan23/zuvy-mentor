@@ -601,7 +601,7 @@ function DetailPanel({
           </div>
         </div>
 
-        {/* Join with Google Meet */}
+        {/* Join session */}
         {session.meetLink && (session.status === "upcoming" || session.status === "reschedule-pending") && (
           <a
             href={session.meetLink}
@@ -610,7 +610,7 @@ function DetailPanel({
             className="flex items-center justify-center gap-2 w-full rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground hover:bg-primary-dark transition-colors"
           >
             <Video className="h-4 w-4" />
-            Join with Google Meet
+            Join Session
           </a>
         )}
 

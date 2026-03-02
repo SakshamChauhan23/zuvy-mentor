@@ -214,7 +214,7 @@ export default function SessionCard({ session }: SessionCardProps) {
                 )}
               >
                 <Video className="h-3 w-3" />
-                Join with Meet
+                Join Session
               </a>
             )}
             <Link
@@ -240,9 +240,24 @@ export default function SessionCard({ session }: SessionCardProps) {
           </div>
         )}
 
-        {/* ── Pending actions: only cancel remains available ── */}
+        {/* ── Pending actions: join + cancel ── */}
         {isPending && (
           <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-border pt-4">
+            {meetLink && (
+              <a
+                href={meetLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5",
+                  "text-xs font-semibold text-primary-foreground",
+                  "hover:bg-primary-dark transition-colors"
+                )}
+              >
+                <Video className="h-3 w-3" />
+                Join Session
+              </a>
+            )}
             <span className="inline-flex items-center gap-1.5 rounded-lg border border-warning/30 bg-warning-light px-3 py-1.5 text-xs font-medium text-warning-dark">
               <Hourglass className="h-3 w-3" />
               Reschedule pending

@@ -8,9 +8,10 @@ import { createCalendarEvent } from "@/lib/google/calendar";
  * Body: { slotId: string }
  *
  * After booking succeeds:
- *  1. Creates a Google Calendar event with a Google Meet link
- *  2. Stores meet_link + calendar_event_id on the booking row
- *  3. Email invitations are sent automatically to both parties
+ *  1. Generates a Jitsi Meet link from the booking ID (stored as meet_link)
+ *  2. Creates a Google Calendar event including the meeting link in the description
+ *  3. Stores meet_link + calendar_event_id on the booking row
+ *  4. Email invitations are sent automatically to both parties via sendUpdates: "all"
  */
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -111,11 +112,14 @@ export async function POST(request: Request) {
     .update({ current_booked_count: slot.current_booked_count + 1 })
     .eq("id", slotId);
 
-  // ── Google Calendar event ────────────────────────────────────────────────
-  // Runs after booking is committed — failure here does NOT roll back the booking
-  let meetLink: string | null = null;
+  // ── Jitsi Meet link ──────────────────────────────────────────────────────
+  // Deterministic URL from booking ID — free, no API key, no Google Workspace needed
+  const jitsiMeetLink = `https://meet.jit.si/zuvy-${booking.id}`;
+  let meetLink: string | null = jitsiMeetLink;
   let calendarEventId: string | null = null;
 
+  // ── Google Calendar event ────────────────────────────────────────────────
+  // Runs after booking is committed — failure here does NOT roll back the booking
   try {
     const mentorName = mentorProfile?.name ?? "Mentor";
     const learnerName = learnerProfile?.name ?? "Learner";
@@ -145,28 +149,32 @@ export async function POST(request: Request) {
         `Time: ${formattedTime}`,
         `Duration: ${slot.duration_minutes} minutes`,
         ``,
-        `Join via the Google Meet link above, or visit your Zuvy dashboard.`,
+        `Join your session: ${jitsiMeetLink}`,
+        ``,
+        `You can also access this from your Zuvy dashboard.`,
       ].join("\n"),
       startIso: slot.slot_start,
       endIso: slot.slot_end,
       attendeeEmails,
     });
 
-    meetLink = calResult.meetLink;
     calendarEventId = calResult.eventId;
 
     // Persist meet_link + calendar_event_id on the booking
     await supabase
       .from("bookings")
-      .update({ meet_link: meetLink, calendar_event_id: calendarEventId })
+      .update({ meet_link: jitsiMeetLink, calendar_event_id: calendarEventId })
       .eq("id", booking.id);
 
-    console.log(
-      `[bookings] Calendar event created: ${calendarEventId}, Meet: ${meetLink ?? "none"}`
-    );
+    console.log(`[bookings] Calendar event created: ${calendarEventId}, Meet: ${jitsiMeetLink}`);
   } catch (calErr) {
     // Calendar failure is non-fatal — booking is already confirmed
+    // Still persist the Jitsi link so the session card shows the join button
     console.error("[bookings] Google Calendar error (non-fatal):", calErr);
+    await supabase
+      .from("bookings")
+      .update({ meet_link: jitsiMeetLink })
+      .eq("id", booking.id);
   }
 
   // ── Notify mentor of new booking ─────────────────────────────────────────
