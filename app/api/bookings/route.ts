@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import { createCalendarEvent } from "@/lib/google/calendar";
 
@@ -104,8 +104,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Failed to create booking" }, { status: 500 });
   }
 
-  // Increment booked count
-  await supabase
+  // Increment booked count — use service client to bypass RLS (student session cannot update mentor_slots)
+  const serviceSupabase = await createServiceClient();
+  await serviceSupabase
     .from("mentor_slots")
     .update({ current_booked_count: slot.current_booked_count + 1 })
     .eq("id", slotId);

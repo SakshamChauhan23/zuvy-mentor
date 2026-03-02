@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import { cancelCalendarEvent } from "@/lib/google/calendar";
 
@@ -60,15 +60,16 @@ export async function POST(
     return NextResponse.json({ error: "Failed to cancel session" }, { status: 500 });
   }
 
-  // Decrement the slot's booked count
-  const { data: slot } = await supabase
+  // Decrement the slot's booked count — use service client to bypass RLS
+  const serviceSupabase = await createServiceClient();
+  const { data: slot } = await serviceSupabase
     .from("mentor_slots")
     .select("current_booked_count")
     .eq("id", booking.slot_id)
     .single();
 
   if (slot && slot.current_booked_count > 0) {
-    await supabase
+    await serviceSupabase
       .from("mentor_slots")
       .update({ current_booked_count: slot.current_booked_count - 1 })
       .eq("id", booking.slot_id);
