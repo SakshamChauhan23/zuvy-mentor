@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
 /**
@@ -31,10 +31,10 @@ export async function POST(
     return NextResponse.json({ error: "Reason must be at least 10 characters" }, { status: 400 });
   }
 
-  // Verify ownership and status
+  // Verify ownership and status (also fetch mentor_id for notification)
   const { data: booking, error: fetchError } = await supabase
     .from("bookings")
-    .select("id, status")
+    .select("id, status, mentor_id")
     .eq("id", id)
     .eq("student_id", user.id)
     .single();
@@ -79,6 +79,27 @@ export async function POST(
   if (updateError) {
     console.error("Reschedule update error:", updateError);
     return NextResponse.json({ error: "Failed to submit reschedule request" }, { status: 500 });
+  }
+
+  // ── Notify mentor of reschedule request ──────────────────────────────────
+  try {
+    const serviceSupabase = await createServiceClient();
+    const { data: learnerProfile } = await supabase
+      .from("profiles")
+      .select("name")
+      .eq("id", user.id)
+      .single();
+    const learnerName = learnerProfile?.name ?? "A learner";
+    await serviceSupabase.from("notifications").insert({
+      user_id: booking.mentor_id,
+      type: "RESCHEDULE_PROPOSED",
+      title: "Reschedule requested",
+      message: `${learnerName} has requested to reschedule their session with you.`,
+      reference_id: id,
+      reference_type: "booking",
+    });
+  } catch (notifErr) {
+    console.error("[reschedule] Notification insert error (non-fatal):", notifErr);
   }
 
   return NextResponse.json({ success: true });

@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import { updateCalendarEvent } from "@/lib/google/calendar";
 
@@ -24,10 +24,10 @@ export async function POST(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Verify ownership and status
+  // Verify ownership and status (also fetch student_id for notification)
   const { data: booking, error: fetchError } = await supabase
     .from("bookings")
-    .select("id, status, slot_id, reschedule_new_slot_id, calendar_event_id")
+    .select("id, status, slot_id, reschedule_new_slot_id, calendar_event_id, student_id")
     .eq("id", id)
     .eq("mentor_id", user.id)
     .single();
@@ -107,6 +107,28 @@ export async function POST(
     } catch (calErr) {
       console.error("[accept-reschedule] Calendar update error (non-fatal):", calErr);
     }
+  }
+
+  // ── Notify learner that reschedule was accepted ───────────────────────────
+  try {
+    const serviceSupabase = await createServiceClient();
+    const { data: mentorProfile } = await supabase
+      .from("profiles")
+      .select("name")
+      .eq("id", user.id)
+      .single();
+    const mentorName = mentorProfile?.name ?? "Your mentor";
+    const studentId = (booking as { student_id: string }).student_id;
+    await serviceSupabase.from("notifications").insert({
+      user_id: studentId,
+      type: "RESCHEDULE_ACCEPTED",
+      title: "Reschedule accepted",
+      message: `${mentorName} has accepted your reschedule request. Your session has been updated.`,
+      reference_id: id,
+      reference_type: "booking",
+    });
+  } catch (notifErr) {
+    console.error("[accept-reschedule] Notification insert error (non-fatal):", notifErr);
   }
 
   return NextResponse.json({ success: true });

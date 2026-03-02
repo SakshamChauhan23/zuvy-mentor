@@ -169,6 +169,21 @@ export async function POST(request: Request) {
     console.error("[bookings] Google Calendar error (non-fatal):", calErr);
   }
 
+  // ── Notify mentor of new booking ─────────────────────────────────────────
+  try {
+    const learnerName = learnerProfile?.name ?? "A learner";
+    await serviceSupabase.from("notifications").insert({
+      user_id: mentorUserId,
+      type: "BOOKING_CONFIRMED",
+      title: "New session booked",
+      message: `${learnerName} has booked a session with you.`,
+      reference_id: booking.id,
+      reference_type: "booking",
+    });
+  } catch (notifErr) {
+    console.error("[bookings] Notification insert error (non-fatal):", notifErr);
+  }
+
   return NextResponse.json(
     { bookingId: booking.id, meetLink, calendarEventId },
     { status: 201 }

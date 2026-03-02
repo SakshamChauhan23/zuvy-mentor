@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createServiceClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
 /**
@@ -21,10 +21,10 @@ export async function POST(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Verify ownership and status
+  // Verify ownership and status (also fetch student_id for notification)
   const { data: booking, error: fetchError } = await supabase
     .from("bookings")
-    .select("id, status")
+    .select("id, status, student_id")
     .eq("id", id)
     .eq("mentor_id", user.id)
     .single();
@@ -56,6 +56,28 @@ export async function POST(
       { error: "Failed to decline reschedule" },
       { status: 500 }
     );
+  }
+
+  // ── Notify learner that reschedule was declined ───────────────────────────
+  try {
+    const serviceSupabase = await createServiceClient();
+    const { data: mentorProfile } = await supabase
+      .from("profiles")
+      .select("name")
+      .eq("id", user.id)
+      .single();
+    const mentorName = mentorProfile?.name ?? "Your mentor";
+    const studentId = (booking as { student_id: string }).student_id;
+    await serviceSupabase.from("notifications").insert({
+      user_id: studentId,
+      type: "RESCHEDULE_DECLINED",
+      title: "Reschedule declined",
+      message: `${mentorName} has declined your reschedule request. Your original session time is kept.`,
+      reference_id: id,
+      reference_type: "booking",
+    });
+  } catch (notifErr) {
+    console.error("[decline-reschedule] Notification insert error (non-fatal):", notifErr);
   }
 
   return NextResponse.json({ success: true });

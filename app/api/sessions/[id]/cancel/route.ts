@@ -29,10 +29,10 @@ export async function POST(
     return NextResponse.json({ error: "Reason must be at least 10 characters" }, { status: 400 });
   }
 
-  // Verify ownership and status
+  // Verify ownership and status (also fetch mentor_id to send notification)
   const { data: booking, error: fetchError } = await supabase
     .from("bookings")
-    .select("id, status, slot_id, calendar_event_id")
+    .select("id, status, slot_id, mentor_id, calendar_event_id")
     .eq("id", id)
     .eq("student_id", user.id)
     .single();
@@ -83,6 +83,26 @@ export async function POST(
     } catch (err) {
       console.error("[cancel] Google Calendar cancel error (non-fatal):", err);
     }
+  }
+
+  // ── Notify mentor of cancellation ────────────────────────────────────────
+  try {
+    const { data: learnerProfile } = await supabase
+      .from("profiles")
+      .select("name")
+      .eq("id", user.id)
+      .single();
+    const learnerName = learnerProfile?.name ?? "A learner";
+    await serviceSupabase.from("notifications").insert({
+      user_id: booking.mentor_id,
+      type: "BOOKING_CANCELLED",
+      title: "Session cancelled",
+      message: `${learnerName} has cancelled their session with you.`,
+      reference_id: booking.id,
+      reference_type: "booking",
+    });
+  } catch (notifErr) {
+    console.error("[cancel] Notification insert error (non-fatal):", notifErr);
   }
 
   return NextResponse.json({ success: true });

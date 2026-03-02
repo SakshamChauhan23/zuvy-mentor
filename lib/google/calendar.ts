@@ -53,9 +53,10 @@ export async function createCalendarEvent(
   const calendar = google.calendar({ version: "v3", auth });
   const tz = params.timeZone ?? "UTC";
 
+  // Note: conferenceData (hangoutsMeet) requires Google Workspace + DWD.
+  // We omit it so the event is created successfully and email invites are sent.
   const response = await calendar.events.insert({
     calendarId: "primary",
-    conferenceDataVersion: 1,
     sendUpdates: "all",
     requestBody: {
       summary: params.summary,
@@ -63,12 +64,6 @@ export async function createCalendarEvent(
       start: { dateTime: params.startIso, timeZone: tz },
       end:   { dateTime: params.endIso,   timeZone: tz },
       attendees: params.attendeeEmails.map((email) => ({ email })),
-      conferenceData: {
-        createRequest: {
-          requestId: `zuvy-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-          conferenceSolutionKey: { type: "hangoutsMeet" },
-        },
-      },
       reminders: {
         useDefault: false,
         overrides: [
@@ -80,14 +75,10 @@ export async function createCalendarEvent(
   });
 
   const event = response.data;
-  const meetLink =
-    event.conferenceData?.entryPoints?.find(
-      (e) => e.entryPointType === "video"
-    )?.uri ?? null;
 
   return {
     eventId: event.id!,
-    meetLink,
+    meetLink: null,   // Meet links require Google Workspace — not available with service account
     htmlLink: event.htmlLink ?? null,
   };
 }
