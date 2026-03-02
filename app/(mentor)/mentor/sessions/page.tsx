@@ -36,6 +36,7 @@ interface ApiSession {
   completedAt: string | null;
   feedback: { notes?: string; areasOfImprovement?: string } | null;
   rating: number | null;
+  meetLink: string | null;
 }
 
 function toMentorSession(a: ApiSession): MentorSession {
@@ -50,6 +51,7 @@ function toMentorSession(a: ApiSession): MentorSession {
     durationMinutes: a.durationMinutes,
     status: a.status,
     bookedAt: a.bookedAt,
+    meetLink: a.meetLink,
     rescheduleRequest: a.rescheduleNewSlot
       ? {
           proposedDate: toDateStr(a.rescheduleNewSlot.slotStart),
@@ -96,6 +98,7 @@ import {
   Star,
   MessageSquare,
   Lock,
+  Video,
 } from "lucide-react";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -597,6 +600,19 @@ function DetailPanel({
             </div>
           </div>
         </div>
+
+        {/* Join with Google Meet */}
+        {session.meetLink && (session.status === "upcoming" || session.status === "reschedule-pending") && (
+          <a
+            href={session.meetLink}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center justify-center gap-2 w-full rounded-xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground hover:bg-primary-dark transition-colors"
+          >
+            <Video className="h-4 w-4" />
+            Join with Google Meet
+          </a>
+        )}
 
         {/* Learner info */}
         <div className="rounded-xl border border-border bg-muted/40 p-4 space-y-2">

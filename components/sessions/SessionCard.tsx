@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { BadgeCheck, CalendarDays, Clock, Zap, Hourglass } from "lucide-react";
+import { BadgeCheck, CalendarDays, Clock, Zap, Hourglass, Video } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatTime, formatDuration } from "@/lib/mock/slots";
 import type { BookedSession, SessionStatus } from "@/lib/types/session";
@@ -69,6 +69,7 @@ export default function SessionCard({ session }: SessionCardProps) {
     endTime,
     durationMinutes,
     status,
+    meetLink,
     rescheduleRequest,
   } = session;
 
@@ -201,6 +202,21 @@ export default function SessionCard({ session }: SessionCardProps) {
         {/* ── Actions (upcoming / rescheduled only) ── */}
         {isActionable && (
           <div className="mt-4 flex flex-wrap gap-2 border-t border-border pt-4">
+            {meetLink && (
+              <a
+                href={meetLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5",
+                  "text-xs font-semibold text-primary-foreground",
+                  "hover:bg-primary-dark transition-colors"
+                )}
+              >
+                <Video className="h-3 w-3" />
+                Join with Meet
+              </a>
+            )}
             <Link
               href={`/sessions/${id}/reschedule`}
               className={cn(

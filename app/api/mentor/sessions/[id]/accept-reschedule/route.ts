@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
+import { updateCalendarEvent } from "@/lib/google/calendar";
 
 /**
  * POST /api/mentor/sessions/[id]/accept-reschedule
@@ -26,7 +27,7 @@ export async function POST(
   // Verify ownership and status
   const { data: booking, error: fetchError } = await supabase
     .from("bookings")
-    .select("id, status, slot_id, reschedule_new_slot_id")
+    .select("id, status, slot_id, reschedule_new_slot_id, calendar_event_id")
     .eq("id", id)
     .eq("mentor_id", user.id)
     .single();
@@ -84,10 +85,10 @@ export async function POST(
       .eq("id", oldSlotId);
   }
 
-  // Increment new slot count
+  // Increment new slot count + fetch times for calendar update
   const { data: newSlot } = await supabase
     .from("mentor_slots")
-    .select("current_booked_count")
+    .select("current_booked_count, slot_start, slot_end")
     .eq("id", newSlotId)
     .single();
   if (newSlot) {
@@ -95,6 +96,17 @@ export async function POST(
       .from("mentor_slots")
       .update({ current_booked_count: newSlot.current_booked_count + 1 })
       .eq("id", newSlotId);
+  }
+
+  // ── Update Google Calendar event with new times (non-fatal) ──────────────
+  const calEventId = (booking as { calendar_event_id?: string | null }).calendar_event_id;
+  if (calEventId && newSlot?.slot_start && newSlot?.slot_end) {
+    try {
+      await updateCalendarEvent(calEventId, newSlot.slot_start, newSlot.slot_end);
+      console.log(`[accept-reschedule] Calendar event ${calEventId} updated`);
+    } catch (calErr) {
+      console.error("[accept-reschedule] Calendar update error (non-fatal):", calErr);
+    }
   }
 
   return NextResponse.json({ success: true });

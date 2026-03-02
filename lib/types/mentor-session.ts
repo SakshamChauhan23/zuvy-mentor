@@ -37,6 +37,7 @@ export interface MentorSession {
   durationMinutes: number;
   status: MentorSessionStatus;
   bookedAt: string;              // ISO timestamp
+  meetLink?: string | null;
   rescheduleRequest?: MentorRescheduleRequest;
   attendance?: AttendanceRecord;
   feedback?: SessionFeedback;

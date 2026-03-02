@@ -30,6 +30,7 @@ interface ApiSession {
   mentorName: string;
   mentorTitle: string;
   isVerified: boolean;
+  meetLink: string | null;
 }
 
 function toBookedSession(s: ApiSession): BookedSession {
@@ -45,6 +46,7 @@ function toBookedSession(s: ApiSession): BookedSession {
     durationMinutes: s.durationMinutes,
     status: s.status,
     bookedAt: s.bookedAt,
+    meetLink: s.meetLink,
   };
 }
 

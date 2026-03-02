@@ -196,6 +196,8 @@ export interface Database {
           feedback_locked_at: string | null;
           reminder_24h_sent: boolean;
           reminder_1h_sent: boolean;
+          meet_link: string | null;
+          calendar_event_id: string | null;
           booked_at: string;
           created_at: string;
           updated_at: string;
@@ -225,6 +227,8 @@ export interface Database {
           feedback_locked_at?: string | null;
           reminder_24h_sent?: boolean;
           reminder_1h_sent?: boolean;
+          meet_link?: string | null;
+          calendar_event_id?: string | null;
           updated_at?: string;
         };
         Relationships: [

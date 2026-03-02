@@ -52,6 +52,7 @@ export async function GET() {
       completed_at,
       feedback,
       rating,
+      meet_link,
       mentor_slots!bookings_slot_id_fkey (slot_start, slot_end, duration_minutes),
       profiles!bookings_student_id_fkey (name, email)
     `)
@@ -120,6 +121,7 @@ export async function GET() {
       completedAt: b.completed_at,
       feedback: fb && (fb.notes || fb.areasOfImprovement) ? fb : null,
       rating: b.rating,
+      meetLink: (b as { meet_link?: string | null }).meet_link ?? null,
     };
   });
 

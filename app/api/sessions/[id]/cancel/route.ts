@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
+import { cancelCalendarEvent } from "@/lib/google/calendar";
 
 /**
  * POST /api/sessions/[id]/cancel
@@ -31,7 +32,7 @@ export async function POST(
   // Verify ownership and status
   const { data: booking, error: fetchError } = await supabase
     .from("bookings")
-    .select("id, status, slot_id")
+    .select("id, status, slot_id, calendar_event_id")
     .eq("id", id)
     .eq("student_id", user.id)
     .single();
@@ -71,6 +72,16 @@ export async function POST(
       .from("mentor_slots")
       .update({ current_booked_count: slot.current_booked_count - 1 })
       .eq("id", booking.slot_id);
+  }
+
+  // ── Cancel Google Calendar event ─────────────────────────────────────────
+  const calEventId = (booking as { calendar_event_id?: string | null }).calendar_event_id;
+  if (calEventId) {
+    try {
+      await cancelCalendarEvent(calEventId);
+    } catch (err) {
+      console.error("[cancel] Google Calendar cancel error (non-fatal):", err);
+    }
   }
 
   return NextResponse.json({ success: true });

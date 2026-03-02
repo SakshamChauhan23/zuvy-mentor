@@ -26,5 +26,6 @@ export interface BookedSession {
   durationMinutes: number;
   status: SessionStatus;
   bookedAt: string;              // ISO timestamp
+  meetLink?: string | null;
   rescheduleRequest?: RescheduleRequest;
 }

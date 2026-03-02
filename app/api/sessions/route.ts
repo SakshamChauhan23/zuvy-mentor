@@ -44,6 +44,7 @@ export async function GET() {
       cancel_reason,
       reschedule_reason,
       reschedule_new_slot_id,
+      meet_link,
       mentor_slots!bookings_slot_id_fkey (
         slot_start,
         slot_end,
@@ -91,6 +92,7 @@ export async function GET() {
       mentorName: profile?.name ?? "Unknown Mentor",
       mentorTitle: mp?.title ?? "",
       isVerified: mp?.is_verified ?? false,
+      meetLink: (b as { meet_link?: string | null }).meet_link ?? null,
     };
   });
 
