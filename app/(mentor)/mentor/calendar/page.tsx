@@ -316,11 +316,51 @@ export default function CalendarPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   // Load slots
-  const loadSlots = () => setSlots(getAvailabilitySlots());
+  interface ApiSlot {
+    id: string;
+    slotStart: string;
+    slotEnd: string;
+    durationMinutes: number;
+    status: "open" | "booked";
+    createdAt: string;
+  }
+
+  function isoToDateStr(iso: string): string {
+    const d = new Date(iso);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+
+  function toHHMM(iso: string): string {
+    const d = new Date(iso);
+    return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  }
+
+  const loadSlots = async () => {
+    const res = await fetch("/api/mentor/slots");
+
+    if (!res.ok) return;
+
+    const data: ApiSlot[] = await res.json();
+
+    const mapped: MentorAvailabilitySlot[] = data.map((a) => ({
+      id: a.id,
+      date: isoToDateStr(a.slotStart),
+      startTime: toHHMM(a.slotStart),
+      endTime: toHHMM(a.slotEnd),
+      durationMinutes: a.durationMinutes,
+      status: a.status,
+      createdAt: a.createdAt,
+    }));
+
+    setSlots(mapped);
+  };
 
   useEffect(() => {
-    const t = setTimeout(() => { loadSlots(); setLoading(false); }, 500);
-    return () => clearTimeout(t);
+    const init = async () => {
+      await loadSlots();
+      setLoading(false);
+    };
+    init();
   }, []);
 
   // Update current time every minute for the live time indicator
@@ -350,7 +390,7 @@ export default function CalendarPage() {
       d.setDate(d.getDate() + i);
       return d;
     }),
-  [weekStart]);
+    [weekStart]);
 
   const weekEnd = weekDays[6];
 
@@ -385,9 +425,12 @@ export default function CalendarPage() {
   const goToToday = () => setWeekStart(getMonday(new Date()));
 
   // Delete handler
-  const handleDelete = (id: string) => {
-    deleteAvailabilitySlot(id);
-    loadSlots();
+  const handleDelete = async (id: string) => {
+    await fetch(`/api/mentor/slots/${id}`, {
+      method: "DELETE",
+    });
+
+    await loadSlots();
     setSelectedSlot(null);
   };
 

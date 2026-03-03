@@ -276,3 +276,279 @@ create policy "Users can update their own notifications"
 -- Service role (used by Route Handlers / cron) can insert notifications
 create policy "Service role can insert notifications"
   on notifications for insert with check (true);
+
+ALTER TABLE public.bookings
+ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS unique_booking_idempotency
+ON public.bookings(idempotency_key);
+
+--------------------------------New changes-------------------------------
+-- Trigger function to enforce slot capacity
+
+SELECT current_database();
+
+ALTER TABLE public.bookings
+ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS unique_booking_idempotency
+ON public.bookings(idempotency_key);
+
+CREATE UNIQUE INDEX IF NOT EXISTS unique_active_slot_booking
+ON bookings(slot_id)
+WHERE status IN ('SCHEDULED','IN_PROGRESS');
+
+CREATE OR REPLACE FUNCTION enforce_slot_capacity()
+RETURNS trigger AS $$
+DECLARE
+  current_count integer;
+  max_cap integer;
+BEGIN
+  SELECT current_booked_count, max_capacity
+  INTO current_count, max_cap
+  FROM mentor_slots
+  WHERE id = NEW.slot_id
+  FOR UPDATE;
+
+  IF current_count >= max_cap THEN
+    RAISE EXCEPTION 'Slot capacity exceeded';
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS check_slot_capacity ON bookings;
+
+CREATE TRIGGER check_slot_capacity
+BEFORE INSERT ON bookings
+FOR EACH ROW
+WHEN (NEW.status = 'SCHEDULED')
+EXECUTE FUNCTION enforce_slot_capacity();
+
+
+RETURNS trigger AS $$
+BEGIN
+
+  IF TG_OP = 'INSERT' AND NEW.status = 'SCHEDULED' THEN
+    UPDATE mentor_slots
+    SET current_booked_count = current_booked_count + 1
+    WHERE id = NEW.slot_id;
+  END IF;
+
+  IF TG_OP = 'UPDATE' AND OLD.status = 'SCHEDULED'
+     AND NEW.status IN ('CANCELLED','MISSED') THEN
+    UPDATE mentor_slots
+    SET current_booked_count = current_booked_count - 1
+    WHERE id = NEW.slot_id;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS booking_count_trigger ON bookings;
+
+CREATE TRIGGER booking_count_trigger
+AFTER INSERT OR UPDATE ON bookings
+FOR EACH ROW
+EXECUTE FUNCTION update_slot_booking_count();
+
+DROP POLICY IF EXISTS "Students can create bookings" ON bookings;
+
+CREATE POLICY "Students can create bookings"
+ON bookings
+FOR INSERT
+WITH CHECK (
+  auth.uid() = student_id
+  AND mentor_id = (
+    SELECT mp.user_id
+    FROM mentor_slots ms
+    JOIN mentor_profiles mp ON mp.id = ms.mentor_id
+    WHERE ms.id = slot_id
+  )
+);
+
+ALTER TABLE public.bookings
+ADD COLUMN IF NOT EXISTS google_event_id TEXT;
+
+CREATE OR REPLACE FUNCTION sync_slot_status()
+RETURNS trigger AS $$
+DECLARE
+  cap integer;
+  count_now integer;
+BEGIN
+  SELECT max_capacity, current_booked_count
+  INTO cap, count_now
+  FROM public.mentor_slots
+  WHERE id = NEW.slot_id;
+
+  -- If capacity reached → mark full
+  IF count_now >= cap THEN
+    UPDATE public.mentor_slots
+    SET status = 'full'
+    WHERE id = NEW.slot_id;
+  END IF;
+
+  -- If below capacity → mark available
+  IF count_now < cap THEN
+    UPDATE public.mentor_slots
+    SET status = 'available'
+    WHERE id = NEW.slot_id;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS sync_slot_status_trigger ON public.bookings;
+
+CREATE TRIGGER sync_slot_status_trigger
+AFTER INSERT OR UPDATE ON public.bookings
+FOR EACH ROW
+EXECUTE FUNCTION sync_slot_status();
+
+CREATE OR REPLACE FUNCTION enforce_booking_state_transition()
+RETURNS trigger AS $$
+BEGIN
+
+  -- Prevent illegal transitions
+  IF TG_OP = 'UPDATE' THEN
+
+    -- SCHEDULED transitions
+    IF OLD.status = 'SCHEDULED'
+       AND NEW.status NOT IN ('SCHEDULED','IN_PROGRESS','CANCELLED','MISSED') THEN
+      RAISE EXCEPTION 'Invalid status transition from SCHEDULED';
+    END IF;
+
+    -- IN_PROGRESS transitions
+    IF OLD.status = 'IN_PROGRESS'
+       AND NEW.status NOT IN ('IN_PROGRESS','COMPLETED','MISSED') THEN
+      RAISE EXCEPTION 'Invalid status transition from IN_PROGRESS';
+    END IF;
+
+    -- COMPLETED cannot change
+    IF OLD.status = 'COMPLETED'
+       AND NEW.status <> 'COMPLETED' THEN
+      RAISE EXCEPTION 'Completed booking cannot change state';
+    END IF;
+
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS booking_state_guard ON public.bookings;
+
+CREATE TRIGGER booking_state_guard
+BEFORE UPDATE ON public.bookings
+FOR EACH ROW
+EXECUTE FUNCTION enforce_booking_state_transition();
+
+CREATE OR REPLACE FUNCTION prevent_booking_in_past()
+RETURNS trigger AS $$
+DECLARE
+  slot_time timestamptz;
+BEGIN
+  SELECT slot_start
+  INTO slot_time
+  FROM public.mentor_slots
+  WHERE id = NEW.slot_id;
+
+  IF slot_time IS NULL THEN
+    RAISE EXCEPTION 'Slot not found';
+  END IF;
+
+  IF slot_time <= now() THEN
+    RAISE EXCEPTION 'Cannot book a slot that has already started';
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS booking_time_guard ON public.bookings;
+
+CREATE TRIGGER booking_time_guard
+BEFORE INSERT ON public.bookings
+FOR EACH ROW
+EXECUTE FUNCTION prevent_booking_in_past();
+
+create function increment_slot_booking(p_slot_id uuid)
+returns void
+language plpgsql
+as $$
+begin
+  update mentor_slots
+  set current_booked_count = current_booked_count + 1
+  where id = p_slot_id
+  and current_booked_count < max_capacity;
+
+  if not found then
+    raise exception 'SLOT_FULL';
+  end if;
+end;
+$$;
+
+create or replace function increment_slot_capacity(slot_uuid uuid)
+returns boolean
+language plpgsql
+as $$
+begin
+  update mentor_slots
+  set current_booked_count = current_booked_count + 1
+  where id = slot_uuid
+  and current_booked_count < max_capacity;
+
+  if found then
+    return true;
+  else
+    return false;
+  end if;
+end;
+$$;
+
+create or replace function decrement_slot_capacity(slot_uuid uuid)
+returns void
+language plpgsql
+as $$
+begin
+  update mentor_slots
+  set current_booked_count = current_booked_count - 1
+  where id = slot_uuid
+  and current_booked_count > 0;
+end;
+$$;
+
+
+DROP FUNCTION increment_slot_capacity(uuid);
+DROP FUNCTION decrement_slot_capacity(uuid);
+DROP FUNCTION increment_slot_booking(uuid);
+
+CREATE OR REPLACE FUNCTION update_slot_booking_count()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+
+  IF TG_OP = 'INSERT' AND NEW.status = 'SCHEDULED' THEN
+    UPDATE public.mentor_slots
+    SET current_booked_count = current_booked_count + 1
+    WHERE id = NEW.slot_id;
+  END IF;
+
+  IF TG_OP = 'UPDATE'
+     AND OLD.status = 'SCHEDULED'
+     AND NEW.status IN ('CANCELLED','MISSED') THEN
+    UPDATE public.mentor_slots
+    SET current_booked_count = current_booked_count - 1
+    WHERE id = NEW.slot_id;
+  END IF;
+
+  RETURN NEW;
+END;
+$$;
+
+ALTER FUNCTION update_slot_booking_count() OWNER TO postgres;
