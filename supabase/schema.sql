@@ -276,3 +276,13 @@ create policy "Users can update their own notifications"
 -- Service role (used by Route Handlers / cron) can insert notifications
 create policy "Service role can insert notifications"
   on notifications for insert with check (true);
+
+ALTER TABLE public.bookings
+ADD COLUMN IF NOT EXISTS idempotency_key TEXT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS unique_booking_idempotency
+ON public.bookings(idempotency_key);
+
+SELECT current_database();
+
+SHOW search_path;
